@@ -1,0 +1,570 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1600</width>
+    <height>900</height>
+   </rect>
+  </property>
+  <property name="sizePolicy">
+   <sizepolicy hsizetype="Maximum" vsizetype="Minimum">
+    <horstretch>0</horstretch>
+    <verstretch>0</verstretch>
+   </sizepolicy>
+  </property>
+  <property name="windowTitle">
+   <string>Stocky Chess</string>
+  </property>
+  <property name="windowIcon">
+   <iconset>
+    <normaloff>../../../../.designer/backup/resources/chess_board.png</normaloff>../../../../.designer/backup/resources/chess_board.png</iconset>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <widget class="QGroupBox" name="controlPanel">
+    <property name="geometry">
+     <rect>
+      <x>869</x>
+      <y>0</y>
+      <width>721</width>
+      <height>841</height>
+     </rect>
+    </property>
+    <property name="title">
+     <string/>
+    </property>
+    <widget class="QLineEdit" name="whiteTime">
+     <property name="geometry">
+      <rect>
+       <x>0</x>
+       <y>80</y>
+       <width>341</width>
+       <height>51</height>
+      </rect>
+     </property>
+     <property name="font">
+      <font>
+       <pointsize>22</pointsize>
+       <bold>true</bold>
+      </font>
+     </property>
+     <property name="text">
+      <string>No time limit</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignCenter</set>
+     </property>
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="blackTime">
+     <property name="geometry">
+      <rect>
+       <x>380</x>
+       <y>80</y>
+       <width>341</width>
+       <height>51</height>
+      </rect>
+     </property>
+     <property name="font">
+      <font>
+       <pointsize>22</pointsize>
+       <bold>true</bold>
+      </font>
+     </property>
+     <property name="text">
+      <string>No time limit</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignCenter</set>
+     </property>
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+    </widget>
+    <widget class="QTextBrowser" name="printConsole">
+     <property name="geometry">
+      <rect>
+       <x>5</x>
+       <y>620</y>
+       <width>711</width>
+       <height>221</height>
+      </rect>
+     </property>
+    </widget>
+    <widget class="QLabel" name="blackLabel">
+     <property name="geometry">
+      <rect>
+       <x>380</x>
+       <y>140</y>
+       <width>81</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="font">
+      <font>
+       <pointsize>16</pointsize>
+       <bold>true</bold>
+      </font>
+     </property>
+     <property name="text">
+      <string>Black</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignCenter</set>
+     </property>
+    </widget>
+    <widget class="QLabel" name="whiteLabel">
+     <property name="geometry">
+      <rect>
+       <x>0</x>
+       <y>140</y>
+       <width>81</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="font">
+      <font>
+       <pointsize>16</pointsize>
+       <bold>true</bold>
+      </font>
+     </property>
+     <property name="text">
+      <string>White</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignCenter</set>
+     </property>
+    </widget>
+    <widget class="QLabel" name="moveLabel">
+     <property name="geometry">
+      <rect>
+       <x>320</x>
+       <y>180</y>
+       <width>81</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="font">
+      <font>
+       <pointsize>16</pointsize>
+       <bold>true</bold>
+      </font>
+     </property>
+     <property name="text">
+      <string>TURN</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignCenter</set>
+     </property>
+    </widget>
+    <widget class="QTextBrowser" name="whiteDisplay">
+     <property name="geometry">
+      <rect>
+       <x>0</x>
+       <y>260</y>
+       <width>351</width>
+       <height>261</height>
+      </rect>
+     </property>
+    </widget>
+    <widget class="QTextBrowser" name="blackDisplay">
+     <property name="geometry">
+      <rect>
+       <x>379</x>
+       <y>260</y>
+       <width>341</width>
+       <height>261</height>
+      </rect>
+     </property>
+    </widget>
+    <widget class="QSlider" name="moveSlider">
+     <property name="enabled">
+      <bool>false</bool>
+     </property>
+     <property name="geometry">
+      <rect>
+       <x>150</x>
+       <y>220</y>
+       <width>431</width>
+       <height>22</height>
+      </rect>
+     </property>
+     <property name="maximum">
+      <number>1</number>
+     </property>
+     <property name="value">
+      <number>0</number>
+     </property>
+     <property name="tracking">
+      <bool>true</bool>
+     </property>
+     <property name="orientation">
+      <enum>Qt::Horizontal</enum>
+     </property>
+    </widget>
+    <widget class="QPushButton" name="prevMove">
+     <property name="geometry">
+      <rect>
+       <x>0</x>
+       <y>540</y>
+       <width>71</width>
+       <height>61</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>PREVIOUS</string>
+     </property>
+    </widget>
+    <widget class="QPushButton" name="nextMove">
+     <property name="geometry">
+      <rect>
+       <x>650</x>
+       <y>540</y>
+       <width>71</width>
+       <height>61</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>NEXT</string>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="FENbar">
+     <property name="geometry">
+      <rect>
+       <x>70</x>
+       <y>540</y>
+       <width>581</width>
+       <height>61</height>
+      </rect>
+     </property>
+     <property name="font">
+      <font>
+       <pointsize>12</pointsize>
+       <italic>true</italic>
+       <bold>false</bold>
+      </font>
+     </property>
+     <property name="text">
+      <string>FEN STRING</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignCenter</set>
+     </property>
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="whiteType">
+     <property name="geometry">
+      <rect>
+       <x>90</x>
+       <y>140</y>
+       <width>251</width>
+       <height>30</height>
+      </rect>
+     </property>
+     <property name="font">
+      <font>
+       <pointsize>12</pointsize>
+       <italic>true</italic>
+       <bold>false</bold>
+      </font>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignCenter</set>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="blackType">
+     <property name="geometry">
+      <rect>
+       <x>470</x>
+       <y>140</y>
+       <width>251</width>
+       <height>30</height>
+      </rect>
+     </property>
+     <property name="font">
+      <font>
+       <pointsize>12</pointsize>
+       <italic>true</italic>
+       <bold>false</bold>
+      </font>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignCenter</set>
+     </property>
+    </widget>
+    <widget class="QLabel" name="materialLabel">
+     <property name="geometry">
+      <rect>
+       <x>260</x>
+       <y>40</y>
+       <width>201</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="font">
+      <font>
+       <pointsize>16</pointsize>
+       <bold>true</bold>
+      </font>
+     </property>
+     <property name="text">
+      <string>Material on Board</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignCenter</set>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="materialWhite">
+     <property name="geometry">
+      <rect>
+       <x>0</x>
+       <y>39</y>
+       <width>251</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="font">
+      <font>
+       <family>Monospac821 BT</family>
+       <pointsize>13</pointsize>
+       <italic>false</italic>
+       <bold>false</bold>
+      </font>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="materialBlack">
+     <property name="geometry">
+      <rect>
+       <x>470</x>
+       <y>40</y>
+       <width>251</width>
+       <height>31</height>
+      </rect>
+     </property>
+     <property name="font">
+      <font>
+       <family>Monospac821 BT</family>
+       <pointsize>13</pointsize>
+       <italic>false</italic>
+       <bold>false</bold>
+      </font>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+     </property>
+    </widget>
+   </widget>
+   <widget class="QGraphicsView" name="viewport">
+    <property name="geometry">
+     <rect>
+      <x>20</x>
+      <y>0</y>
+      <width>840</width>
+      <height>840</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true"/>
+    </property>
+    <property name="frameShape">
+     <enum>QFrame::Box</enum>
+    </property>
+    <property name="frameShadow">
+     <enum>QFrame::Plain</enum>
+    </property>
+    <property name="lineWidth">
+     <number>0</number>
+    </property>
+   </widget>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+  <widget class="QToolBar" name="toolBar">
+   <property name="windowTitle">
+    <string>toolBar</string>
+   </property>
+   <attribute name="toolBarArea">
+    <enum>TopToolBarArea</enum>
+   </attribute>
+   <attribute name="toolBarBreak">
+    <bool>false</bool>
+   </attribute>
+  </widget>
+  <widget class="QMenuBar" name="menuBar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>1600</width>
+     <height>22</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="menuGame">
+    <property name="title">
+     <string>Game</string>
+    </property>
+    <widget class="QMenu" name="menuFlip_Board">
+     <property name="title">
+      <string>Flip Board</string>
+     </property>
+     <addaction name="actionWhite_Bottom"/>
+     <addaction name="actionBlack_Bottom"/>
+    </widget>
+    <widget class="QMenu" name="menuWhite_Player">
+     <property name="title">
+      <string>White Player...</string>
+     </property>
+     <addaction name="separator"/>
+     <addaction name="actionSetWhite_Human"/>
+     <addaction name="actionSetWhite_Stockfish"/>
+    </widget>
+    <widget class="QMenu" name="menuBlack_Player">
+     <property name="title">
+      <string>Black Player...</string>
+     </property>
+     <addaction name="actionSetBlack_Human"/>
+     <addaction name="actionSetBlack_Stockfish"/>
+    </widget>
+    <widget class="QMenu" name="menuTime_Control">
+     <property name="title">
+      <string>Time Control ...</string>
+     </property>
+     <addaction name="actionSetWhiteTimeControlMode"/>
+     <addaction name="actionSetBlackTimeControlMode"/>
+    </widget>
+    <addaction name="separator"/>
+    <addaction name="actionNew_Game"/>
+    <addaction name="menuTime_Control"/>
+    <addaction name="menuWhite_Player"/>
+    <addaction name="menuBlack_Player"/>
+    <addaction name="menuFlip_Board"/>
+    <addaction name="actionImport_FEN"/>
+    <addaction name="actionExport_PGN"/>
+   </widget>
+   <widget class="QMenu" name="menuHelp">
+    <property name="title">
+     <string>Help</string>
+    </property>
+    <addaction name="actionAbout"/>
+   </widget>
+   <addaction name="menuGame"/>
+   <addaction name="menuHelp"/>
+  </widget>
+  <action name="actionNew_Game">
+   <property name="text">
+    <string>New Game</string>
+   </property>
+   <property name="toolTip">
+    <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;This button will start a new game of chess.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+   </property>
+  </action>
+  <action name="actionSet_Difficulty">
+   <property name="text">
+    <string>Set Difficulty</string>
+   </property>
+   <property name="toolTip">
+    <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Use this to select the difficulty level of the CPU.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+   </property>
+  </action>
+  <action name="actionAbout">
+   <property name="text">
+    <string>About</string>
+   </property>
+   <property name="toolTip">
+    <string>This will display information about the program.</string>
+   </property>
+  </action>
+  <action name="actionBlack">
+   <property name="text">
+    <string>Black</string>
+   </property>
+  </action>
+  <action name="actionRandom">
+   <property name="text">
+    <string>Random</string>
+   </property>
+  </action>
+  <action name="actionWhite">
+   <property name="text">
+    <string>White</string>
+   </property>
+  </action>
+  <action name="actionWhite_Bottom">
+   <property name="text">
+    <string>White on Bottom</string>
+   </property>
+  </action>
+  <action name="actionBlack_Bottom">
+   <property name="text">
+    <string>Black on Bottom</string>
+   </property>
+  </action>
+  <action name="actionImport_FEN">
+   <property name="text">
+    <string>Import FEN</string>
+   </property>
+  </action>
+  <action name="actionExport_PGN">
+   <property name="text">
+    <string>Export PGN</string>
+   </property>
+  </action>
+  <action name="actionWhite_is">
+   <property name="text">
+    <string>White is...</string>
+   </property>
+  </action>
+  <action name="actionBlack_is">
+   <property name="text">
+    <string>Black is...</string>
+   </property>
+  </action>
+  <action name="actionSetWhite_Human">
+   <property name="text">
+    <string>Is Human</string>
+   </property>
+  </action>
+  <action name="actionSetWhite_Stockfish">
+   <property name="text">
+    <string>Is Stockfish</string>
+   </property>
+  </action>
+  <action name="actionSetBlack_Human">
+   <property name="text">
+    <string>Is Human</string>
+   </property>
+   <property name="toolTip">
+    <string>Is Human</string>
+   </property>
+  </action>
+  <action name="actionSetBlack_Stockfish">
+   <property name="text">
+    <string>Is Stockfish</string>
+   </property>
+   <property name="toolTip">
+    <string>Is Stockfish</string>
+   </property>
+  </action>
+  <action name="actionSetWhiteTimeControlMode">
+   <property name="text">
+    <string>Set White Time</string>
+   </property>
+  </action>
+  <action name="actionSetBlackTimeControlMode">
+   <property name="text">
+    <string>Set Black Time</string>
+   </property>
+  </action>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

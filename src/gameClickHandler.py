@@ -1,0 +1,200 @@
+# This class collects user clicks at x,y or bot moves and operates the game
+from chessBoard import chessBoard_widget
+from chessState import player_t, chessState
+from chessAdmin import getMovesFromSquare, movePiece,isGameOver,chessMove,convertLabel
+from gameLog import gameLog
+from PyQt6.QtWidgets import QMainWindow
+from uciEngine import uciEngine
+import time
+
+class gameClickHandler:
+    def __init__(self):
+        self.action_state = "WHITE_SELECT_PIECE"
+        self.action_idx = 64
+        self.highlighed_moves = []
+
+    # Set who's turn it is in the click state machine
+    def setWhosTurn(self, whosMove : player_t):
+        if(whosMove == player_t.WHITE):
+            self.action_state = "WHITE_SELECT_PIECE"
+        else:
+            self.action_state = "BLACK_SELECT_PIECE"
+
+    # This function is to consolidate repeated code
+    def _F1(self, idx : int, nextState : str, cs : chessState, cb : chessBoard_widget):
+        # Get available moves
+        moves = getMovesFromSquare(idx,cs)
+        if(len(moves) > 0):
+            # Highlight
+            self.highlighed_moves = moves
+            # Render
+            cb.renderBoard(cs,moves)
+            # Log index
+            self.action_idx = idx
+            # Next state
+            self.action_state = nextState
+
+    # This function is to consolidate repeated code
+    def _F2(self, idx : int, nextState : str, cs : chessState, cb : chessBoard_widget, gl : gameLog, mainWindow : QMainWindow):
+        # Look for promotions
+        pType = "" # Used for promotions
+        for m in self.highlighed_moves:
+            # Look for promtions
+            if (m.end == idx) and (m.promotionPiece != ""):
+                # Window action for promotions
+                pType = mainWindow.promotionCallback(cs.pieceList[m.start].isupper())
+                break
+        
+        # Look for click in highlighted moves
+        for m in self.highlighed_moves:
+            if(m.end == idx) and (m.promotionPiece == pType) and (m.is_check == False):
+                self.highlighed_moves = None
+                # Move
+                mainWindow.movePieceWithAnimation(m,cs)
+                # Log
+                gl.addState(cs)
+                # Look for game over conditions
+                match isGameOver(cs):
+                    case 0: 
+                        # Normal continue game
+                        self.action_state = nextState
+                    case 1:
+                        # Checkmate
+                        self.action_state = "CHECKMATE"
+                    case 2:
+                        # Stalemate
+                        self.action_state = "STALEMATE"
+                # Update action index
+                self.action_idx = None
+                # Render
+                cb.renderBoard(cs)     
+                return
+
+    # Get's and enginem move
+    def engineHandler(self,engine : uciEngine,cs : chessState, cb : chessBoard_widget, gl : gameLog, mainWindow : QMainWindow):
+            # Engine run
+            argDict = {"inputFEN":cs.getFENstring()}
+            engine.tick(argDict)
+            while(engine.current_state != "WAITING"):
+                # Simulate time passage while blocking
+                engine.tick(argDict)
+                time.sleep(mainWindow.loopTimeMS/1000.0)
+                mainWindow.timerCallback()
+                # Refresh
+                mainWindow.repaint()
+
+            # Act on best move
+            bestMove = argDict["bestMove"]
+            # Start
+            startPos = bestMove[0:2]
+            [c,r,startIndex] = convertLabel(startPos)
+            # End
+            endPos = bestMove[2:4]
+            [c,r,endIndex] = convertLabel(endPos)
+
+            # Promotion
+            promotion = ""
+            if(len(bestMove)==5):
+                promotion= bestMove[4]
+                if(cs.turn == "w"):
+                    promotion = promotion.upper()
+                else:
+                    promotion = promotion.lower()
+           
+           # Make Move
+            mainWindow.movePieceWithAnimation(chessMove(startIndex,endIndex,promotionPiece=promotion),cs)
+
+            # Look for game over conditions
+            match isGameOver(cs):
+                case 0: 
+                    if(cs.turn == "w"):
+                        self.action_state = "WHITE_SELECT_PIECE"
+                    else:
+                        self.action_state = "BLACK_SELECT_PIECE"
+                case 1:
+                    # Checkmate
+                    self.action_state = "CHECKMATE"
+                    if(cs.turn == "w"):
+                        mainWindow.whiteDisplay.append("White loses by checkmate")
+                        mainWindow.blackDisplay.append("Black wins by checkmate")
+                    else:
+                        mainWindow.whiteDisplay.append("White wins by checkmate")
+                        mainWindow.blackDisplay.append("Black loses by checkmate")                      
+                case 2:
+                    # Stalemate
+                    self.action_state = "STALEMATE"
+                    mainWindow.whiteDisplay.append("Game ends in stalemate")
+                    mainWindow.blackDisplay.append("Game ends in stalemate")
+            # Log
+            gl.addState(cs)
+            # Render
+            cb.renderBoard(cs)
+
+    # This state machine handles user clicks or bot moves and takes action
+    def clickHandler(self, x : int, y : int, cs : chessState, cb : chessBoard_widget, gl : gameLog, mainWindow : QMainWindow):
+            # x or y = None signifies this is a bot move
+            if(x != None) and (y!= None):
+                idx = cb.coordToSquare(x,y)
+                # Make sure not out of range
+                if(idx >= 64):
+                    # If so, quit
+                    return 
+                clickedPiece = cs.pieceList[idx]
+            
+            # Take action
+            match self.action_state:              
+                case "WHITE_SELECT_PIECE":
+                    # Check for engine move
+                    if(mainWindow.whiteEngine != None):
+                        self.engineHandler(mainWindow.whiteEngine,cs,cb,gl,mainWindow)
+                    # Clicked empty square
+                    elif(clickedPiece == None):
+                        None
+                    elif(clickedPiece.isupper()):
+                        self._F1(idx,"WHITE_SELECT_MOVE",cs,cb)
+
+                case "WHITE_SELECT_MOVE":
+                    # Pick same index to cancel highlighting
+                    if(idx == self.action_idx):
+                        cb.renderBoard(cs,self.highlighed_moves)
+                        self.action_state = "WHITE_SELECT_PIECE"       
+                    # Change if picking a another white piece
+                    elif(clickedPiece != None) and (clickedPiece.isupper()):
+                        self._F1(idx,"WHITE_SELECT_MOVE",cs,cb)  
+                    else:      
+                        self._F2(idx,"BLACK_SELECT_PIECE",cs,cb,gl,mainWindow)           
+
+                case "BLACK_SELECT_PIECE":
+                    # Check for engine move
+                    if(mainWindow.blackEngine != None):
+                        self.engineHandler(mainWindow.blackEngine,cs,cb,gl,mainWindow)                        
+                    # Clicked empty square
+                    elif(clickedPiece == None):
+                        None
+                    elif(clickedPiece.islower()):
+                        self._F1(idx,"BLACK_SELECT_MOVE",cs,cb)
+
+                case "BLACK_SELECT_MOVE":
+                    # Pick same index to cancel highlighting
+                    if(idx == self.action_idx):
+                        cb.renderBoard(cs,self.highlighed_moves)                 
+                    # Change if picking a another white piece
+                    elif(clickedPiece != None) and (clickedPiece.islower()):
+                        self._F1(idx,"BLACK_SELECT_MOVE",cs,cb)  
+                    else:      
+                        self._F2(idx,"WHITE_SELECT_PIECE",cs,cb,gl,mainWindow)  
+                                    
+                case "CHECKMATE":
+                    None # Dialog handled outside of function
+
+                case "STALEMATE":
+                    None # Dialog handled outside of function
+
+                case "TIMEOUT":
+                    None # Dialog handled outside of function
+
+
+
+
+if __name__ == "__main__":
+    None
