@@ -51,9 +51,8 @@ pip install PyQt6
 3. Choose **Game > New Game**. Use **Game > White Player...** and **Black Player...** to set each side
    to *Is Human* or *Is Stockfish*, and **Time Control...** to set the clocks.
 
-The engine handshake in `uciEngine.py` compares against Windows line endings, so the program is set up
-for Windows as it stands. On Linux or macOS that comparison needs to be adjusted before Stockfish will
-respond.
+The engine handshake in `uciEngine.py` works across Windows, Linux, and macOS, and automatically
+detects `stockfish` or `stockfish.exe` on your `PATH` or in the repository directory.
 
 ## Project layout
 
@@ -76,9 +75,9 @@ API documentation generated with Sphinx is hosted on GitHub Pages at
 
 ## Known limitations
 
-- Draws by repetition, the fifty-move rule, and insufficient material are not detected.
+- Draws by threefold repetition are not detected.
 - The *Export PGN* menu item is present but not implemented.
-- Stockfish must be installed separately, and the engine handshake currently assumes Windows.
+- Stockfish must be installed separately.
 
 ## License
 
