@@ -782,21 +782,29 @@ def getKingMoves(startIndex : int, cs : chessState):
     :rtype: list[chessMove]
     """
 
+    def isSquareAttackedForKing(kingSquare : int, targetSquare : int, is_white : bool, cs : chessState):
+        pretendGame = copy.deepcopy(cs)
+        pretendGame.turn = "w" if is_white else "b"
+        kingChar = "K" if is_white else "k"
+        pretendGame.pieceList[kingSquare] = None
+        pretendGame.pieceList[targetSquare] = kingChar
+        return hasKingCollision(pretendGame)
+
     def considerKingSideCastle(startIndex:int, cs:chessState, result : list):
-        # Can't be in check
-        if(hasKingCollision(cs)):
-            return
         # color
         is_white = cs.pieceList[startIndex].isupper()
+        # Can't be in check
+        if isSquareAttackedForKing(startIndex, startIndex, is_white, cs):
+            return
         proceed = False
         # Get eligible squares
-        if(is_white) and (cs.castle_white_king):
+        if(is_white) and (cs.castle_white_king) and (startIndex == 60) and (cs.pieceList[63] == "R"):
             proceed = True
             sk = 60
             s1 = 61
             s2 = 62
             sr = 63
-        if(not is_white) and (cs.castle_black_king):
+        if(not is_white) and (cs.castle_black_king) and (startIndex == 4) and (cs.pieceList[7] == "r"):
             proceed = True
             sk = 4
             s1 = 5
@@ -806,40 +814,32 @@ def getKingMoves(startIndex : int, cs : chessState):
             return
         
         # Look for pieces blocking castle
-        if(cs.pieceList[s1] != None):
-            return
-
-        if(cs.pieceList[s2] != None):
+        if(cs.pieceList[s1] != None) or (cs.pieceList[s2] != None):
             return
         
-        # Look for threats on these squares
-        for idx,p in enumerate(cs.pieceList):
-            # For opposite colors
-            if(p != None) and (p.upper() != "K") and (p.isupper() != is_white):
-                moves = getMovesFromSquare(idx,cs,False)
-                for m in moves:
-                    if(m.end == s1) or (m.end == s2) or (m.end == sk) or (m.end == sr):
-                        return
+        # King cannot pass through or land on an attacked square
+        if isSquareAttackedForKing(sk, s1, is_white, cs) or isSquareAttackedForKing(sk, s2, is_white, cs):
+            return
         
         # Valid castle
         result.append(chessMove(sk,s2,castleRookSquares=[sr,s1]))
             
     def considerQueenSideCastle(startIndex:int, cs:chessState, result : list):
-        # Can't be in check
-        if(hasKingCollision(cs)):
-            return
         # color
         is_white = cs.pieceList[startIndex].isupper()
+        # Can't be in check
+        if isSquareAttackedForKing(startIndex, startIndex, is_white, cs):
+            return
         proceed = False
         # Get eligible squares
-        if(is_white) and (cs.castle_white_queen):
+        if(is_white) and (cs.castle_white_queen) and (startIndex == 60) and (cs.pieceList[56] == "R"):
             proceed = True
             sk = 60
             s1 = 59
             s2 = 58
             s3 = 57
             sr = 56
-        if(not is_white) and (cs.castle_black_queen):
+        if(not is_white) and (cs.castle_black_queen) and (startIndex == 4) and (cs.pieceList[0] == "r"):
             proceed = True
             sk = 4
             s1 = 3
@@ -849,21 +849,13 @@ def getKingMoves(startIndex : int, cs : chessState):
         if(proceed == False):
             return
         
-        # Look for pieces blocking castle
-        if(cs.pieceList[s1] != None):
-            return
-
-        if(cs.pieceList[s2] != None):
+        # Look for pieces blocking castle (including b1/b8 = s3)
+        if(cs.pieceList[s1] != None) or (cs.pieceList[s2] != None) or (cs.pieceList[s3] != None):
             return
         
-        # Look for threats on these squares
-        for idx,p in enumerate(cs.pieceList):
-            # For opposite colors
-            if(p != None) and (p.upper() != "K") and (p.isupper() != is_white):
-                moves = getMovesFromSquare(idx,cs,False)
-                for m in moves:
-                    if(m.end == s1) or (m.end == s2) or (m.end == s3) or (m.end == sk) or (m.end == sr):
-                        return
+        # King cannot pass through or land on an attacked square (s3 and sr may be attacked)
+        if isSquareAttackedForKing(sk, s1, is_white, cs) or isSquareAttackedForKing(sk, s2, is_white, cs):
+            return
         
         # Valid castle
         result.append(chessMove(sk,s2,castleRookSquares=[sr,s1]))
