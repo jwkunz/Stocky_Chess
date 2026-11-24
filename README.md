@@ -69,6 +69,11 @@ respond.
 | `src/stockfishTerminalPlay.py` | A terminal-based way to play against Stockfish |
 | `resources/` | The Qt Designer interface file and the chess piece images |
 
+## Documentation
+
+API documentation generated with Sphinx is hosted on GitHub Pages at
+[https://jwkunz.github.io/Stocky_Chess/](https://jwkunz.github.io/Stocky_Chess/).
+
 ## Known limitations
 
 - Draws by repetition, the fifty-move rule, and insufficient material are not detected.
