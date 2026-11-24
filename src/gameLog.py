@@ -12,7 +12,7 @@ class gameLog:
 
     def __init__(self):
         """Initialize an empty game log."""
-        self.log = []
+        self.log: list[chessState] = []
 
     def reset(self):
         """Reset the log to contain a single starting chess position."""
@@ -20,7 +20,7 @@ class gameLog:
         cs.setNewGame()
         self.log = [cs]
 
-    def getGameByIndex(self, idx : int):
+    def getGameByIndex(self, idx: int) -> chessState:
         """Retrieve the board state at a specific history index.
 
         :param idx: Index in the move history log.
@@ -28,44 +28,51 @@ class gameLog:
         :return: The board state at ``idx``.
         :rtype: chessState
         """
-        return self.log[idx]
+        if not self.log:
+            self.reset()
+        clamped = max(0, min(idx, len(self.log) - 1))
+        return self.log[clamped]
 
-    def addState(self, cs : chessState):
-        """Append a new board state to the end of the log.
+    def addState(self, cs: chessState):
+        """Append a snapshot copy of a new board state to the end of the log.
 
         :param cs: The board state to append.
         :type cs: chessState
         """
-        self.log.append(cs)
+        self.log.append(cs.copy())
 
-    def currentGame(self):
+    def currentGame(self) -> chessState:
         """Return the most recent board state in the log.
 
         :return: The latest board state.
         :rtype: chessState
         """
+        if not self.log:
+            self.reset()
         return self.log[-1]
 
-    def getCurrentIndex(self):
+    def getCurrentIndex(self) -> int:
         """Return the index of the latest board state in the log.
 
         :return: Index of the last element in :attr:`log`.
         :rtype: int
         """
-        return len(self.log)-1
+        return max(0, len(self.log) - 1)
 
-    def pruneAfterIndex(self,index : int):
+    def pruneAfterIndex(self, index: int):
         """Truncate all board states after the given index.
 
         :param index: The last history index to retain.
         :type index: int
         """
-        self.log = self.log[0:index+1]
+        if index < 0:
+            return
+        self.log = self.log[: index + 1]
 
-    def getLatestGame(self):
+    def getLatestGame(self) -> chessState:
         """Return the latest board state at the end of the log.
 
         :return: The last recorded board state.
         :rtype: chessState
         """
-        return self.log[-1]
+        return self.currentGame()

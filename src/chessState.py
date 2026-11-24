@@ -1,6 +1,11 @@
 """Board state representation and FEN serialization for Stocky Chess."""
 
 from enum import Enum
+import copy
+
+
+START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+VALID_PIECES = frozenset("PNBRQKpnbrqk")
 
 
 class player_t(Enum):
@@ -37,7 +42,7 @@ class chessState:
     :vartype castle_white_king: bool
     :ivar castle_white_queen: Whether White can castle queenside.
     :vartype castle_white_queen: bool
-    :ivar enpassant_targets: Algebraic target square for en passant or ``'-'``.
+    :ivar enpassant_targets: Algebraic target square for en passant (uppercase, e.g. ``'E3'``) or ``'-'``.
     :vartype enpassant_targets: str
     :ivar half_move: Half-move clock since the last pawn advance or capture.
     :vartype half_move: int
@@ -49,163 +54,169 @@ class chessState:
 
     def __init__(self):
         """Initialize an empty chess board state with default counters and flags."""
-        # Databases
-        self.pieceList = []
-        for i in range(64):
-            self.pieceList.append(None)
-        # Turn character
-        self.turn = ""
-        # Castle flags
+        self.pieceList = [None] * 64
+        self.turn = "w"
         self.castle_black_king = False
         self.castle_black_queen = False
         self.castle_white_king = False
         self.castle_white_queen = False
-        # En Passant
         self.enpassant_targets = "-"
-        # Half move counter
         self.half_move = 0
-        # Full move counter
-        self.full_move = 0
-        # Flags
-        self.promotable = False # indicates the .turn has a promotion
+        self.full_move = 1
+        self.promotable = False
 
-    # Sets all the positions to start of game
+    def copy(self) -> "chessState":
+        """Return a deep copy of this chessState.
+
+        :return: Cloned chessState instance.
+        :rtype: chessState
+        """
+        cloned = chessState()
+        cloned.pieceList = list(self.pieceList)
+        cloned.turn = self.turn
+        cloned.castle_black_king = self.castle_black_king
+        cloned.castle_black_queen = self.castle_black_queen
+        cloned.castle_white_king = self.castle_white_king
+        cloned.castle_white_queen = self.castle_white_queen
+        cloned.enpassant_targets = self.enpassant_targets
+        cloned.half_move = self.half_move
+        cloned.full_move = self.full_move
+        cloned.promotable = self.promotable
+        return cloned
+
+    def __eq__(self, other: object) -> bool:
+        """Compare two chessState objects for full equality."""
+        if not isinstance(other, chessState):
+            return False
+        return (
+            self.pieceList == other.pieceList
+            and self.turn == other.turn
+            and self.castle_white_king == other.castle_white_king
+            and self.castle_white_queen == other.castle_white_queen
+            and self.castle_black_king == other.castle_black_king
+            and self.castle_black_queen == other.castle_black_queen
+            and self.enpassant_targets == other.enpassant_targets
+            and self.half_move == other.half_move
+            and self.full_move == other.full_move
+        )
+
     def setNewGame(self):
         """Reset the board to the standard chess starting position."""
-        self.setFENstring("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+        self.setFENstring(START_FEN)
 
-    # Get the current board's fen string
-    def getFENstring(self):
+    def getFENstring(self) -> str:
         """Serialize the current board state into a Forsyth-Edwards Notation (FEN) string.
 
         :return: The FEN string representing the current state.
         :rtype: str
         """
-        fen = ""
-        blank_counter = 0
-        for i in range(8):
-            for j in range(8):
-                idx = i*8+j
-                endrow = (j == 7)
-                if(self.pieceList[idx] == None):
+        rows = []
+        for r in range(8):
+            row_str = ""
+            blank_counter = 0
+            for c in range(8):
+                piece = self.pieceList[r * 8 + c]
+                if piece is None:
                     blank_counter += 1
-                    if(endrow):
-                        fen += str(blank_counter)
-                        fen += "/"
-                        blank_counter = 0
                 else:
-                    if(blank_counter > 0):
-                        fen += str(blank_counter)
+                    if blank_counter > 0:
+                        row_str += str(blank_counter)
                         blank_counter = 0
+                    row_str += piece
+            if blank_counter > 0:
+                row_str += str(blank_counter)
+            rows.append(row_str)
 
-                    fen += self.pieceList[idx]
-                    if(endrow):
-                        fen += "/"
+        board_part = "/".join(rows)
 
-        # Get rid of last token
-        fen = fen[0:-1]
-        
-        # Turn
-        fen += f" {self.turn} "
-
-        # Castling
         fen_castle = ""
-        if(self.castle_white_king):
-            fen_castle += 'K'
-        if(self.castle_white_queen):
-            fen_castle += 'Q'
-        if(self.castle_black_king):
-            fen_castle += 'k'
-        if(self.castle_black_queen):
-            fen_castle += 'q'
-        if(fen_castle == ""):
-            fen_castle = "-"  
-        fen += f"{fen_castle} "          
+        if self.castle_white_king:
+            fen_castle += "K"
+        if self.castle_white_queen:
+            fen_castle += "Q"
+        if self.castle_black_king:
+            fen_castle += "k"
+        if self.castle_black_queen:
+            fen_castle += "q"
+        if not fen_castle:
+            fen_castle = "-"
 
-        # Other fields
-        fen += f"{self.enpassant_targets} "
-        fen += f"{self.half_move} "
-        fen += f"{self.full_move}"
+        ep = self.enpassant_targets.lower() if self.enpassant_targets != "-" else "-"
+        return f"{board_part} {self.turn} {fen_castle} {ep} {self.half_move} {self.full_move}"
 
-        # return
-        return fen
-    
-
-    # Set the board to a given FEN string
-    def setFENstring(self,fen : str):
-        """Populate the board state from a Forsyth-Edwards Notation (FEN) string.
+    def setFENstring(self, fen: str):
+        """Populate and validate the board state from a Forsyth-Edwards Notation (FEN) string.
 
         :param fen: A space-delimited 6-field FEN string.
         :type fen: str
+        :raises ValueError: If the FEN string is malformed.
         """
-        # Get the various fields
-        fields = fen.split()
+        if not isinstance(fen, str) or not fen.strip():
+            raise ValueError("FEN string cannot be empty.")
 
-        # Reset pieces
-        self.pieceList = []
-        for i in range(64):
-            self.pieceList.append(None)
+        fields = fen.strip().split()
+        if len(fields) != 6:
+            raise ValueError(f"Expected 6 fields in FEN string, got {len(fields)}.")
 
-        # Store FEN into pieceList
-        # idx=0 -> r=0 c=0 -> "A8", idx=63 -> r=7 c=7 -> "H1"
-        row_counter = 0
-        column_counter = 0
-        for token in fields[0]:
-            pos = row_counter*8 + column_counter
-            if(token.isdigit()):
-                # Advance the rolumn counter
-                column_counter += int(token)
-                continue
-            if(token == " "):
-                # Skip
-                continue
-            if(token == "/"):
-                # End of row
-                row_counter += 1
-                column_counter = 0
-                continue
-            self.pieceList[pos] = token
-            column_counter += 1
+        ranks = fields[0].split("/")
+        if len(ranks) != 8:
+            raise ValueError(f"Expected 8 ranks in FEN board, got {len(ranks)}.")
 
-        # Store FEN turn
-        self.turn = fields[1]
+        new_pieces = [None] * 64
+        for r_idx, rank_str in enumerate(ranks):
+            col_idx = 0
+            for ch in rank_str:
+                if ch.isdigit():
+                    col_idx += int(ch)
+                elif ch in VALID_PIECES:
+                    if col_idx >= 8:
+                        raise ValueError(f"Rank {8 - r_idx} exceeds 8 files.")
+                    new_pieces[r_idx * 8 + col_idx] = ch
+                    col_idx += 1
+                else:
+                    raise ValueError(f"Invalid piece character '{ch}' in FEN.")
+            if col_idx != 8:
+                raise ValueError(f"Rank {8 - r_idx} has {col_idx} squares instead of 8.")
 
-        # Castle rights
-        self.castle_black_king = False
-        self.castle_black_queen = False
-        self.castle_white_king = False
-        self.castle_white_queen = False
-        for token in fields[2]:
-            match token:
-                case "k":
-                    self.castle_black_king = True
-                case "q":
-                    self.castle_black_queen = True                    
-                case "K":
-                    self.castle_white_king = True
-                case "Q":
-                    self.castle_white_queen = True
-                case _: 
-                    # Other or -
-                    None
-        
-        # En Passant
-        self.enpassant_targets = fields[3]
+        turn_field = fields[1].lower()
+        if turn_field not in ("w", "b"):
+            raise ValueError(f"Invalid turn field '{fields[1]}'; expected 'w' or 'b'.")
 
-        # Half move counter
-        self.half_move = int(fields[4])
+        castle_field = fields[2]
+        if castle_field != "-" and any(c not in "KQkq" for c in castle_field):
+            raise ValueError(f"Invalid castling availability '{castle_field}'.")
 
-        # Full move counter
-        self.full_move = int(fields[5])
+        ep_field = fields[3]
+        if ep_field != "-":
+            if len(ep_field) != 2 or ep_field[0].lower() not in "abcdefgh" or ep_field[1] not in "36":
+                raise ValueError(f"Invalid en passant target square '{ep_field}'.")
+            ep_normalized = ep_field.upper()
+        else:
+            ep_normalized = "-"
 
-    # Goes white to black.  Does not handle half moves
+        half_move = int(fields[4])
+        full_move = int(fields[5])
+        if half_move < 0 or full_move < 1:
+            raise ValueError("Half-move clock must be >= 0 and full-move number must be >= 1.")
+
+        self.pieceList = new_pieces
+        self.turn = turn_field
+        self.castle_white_king = "K" in castle_field
+        self.castle_white_queen = "Q" in castle_field
+        self.castle_black_king = "k" in castle_field
+        self.castle_black_queen = "q" in castle_field
+        self.enpassant_targets = ep_normalized
+        self.half_move = half_move
+        self.full_move = full_move
+
     def toggle_turn(self):
         """Switch the active turn between White and Black and increment full moves after Black's turn."""
-        if(self.turn == "w"):
+        if self.turn == "w":
             self.turn = "b"
         else:
             self.turn = "w"
             self.full_move += 1
+
 
 if __name__ == "__main__":
     dut = chessState()
