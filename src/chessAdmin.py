@@ -936,3 +936,91 @@ def getMovesFromSquare(start: int, cs: chessState, filterForCheck: bool = True) 
     if piece == "K":
         return getKingMoves(start, cs)
     return []
+
+
+def moveToSAN(move: chessMove, cs: chessState, history: list[chessState] | None = None) -> str:
+    """Convert a legal :class:`chessMove` on ``cs`` into Standard Algebraic Notation (SAN).
+
+    Handles castling (``O-O``, ``O-O-O``), pawn captures and promotions, piece
+    disambiguation (file, rank, or full square), check (``+``), and checkmate (``#``).
+
+    :param move: Legal move to format.
+    :type move: chessMove
+    :param cs: Board state prior to executing ``move``.
+    :type cs: chessState
+    :param history: Optional history list prior to ``move``.
+    :type history: list[chessState] | None
+    :return: Standard Algebraic Notation string.
+    :rtype: str
+    """
+    moving_piece = cs.pieceList[move.start]
+    if moving_piece is None:
+        return move.to_uci()
+
+    if len(move.castleRookSquares) > 0:
+        san_core = "O-O" if move.end > move.start else "O-O-O"
+    else:
+        start_col, start_row, start_label = convertIndex(move.start)
+        _, _, end_label = convertIndex(move.end)
+        dest_sq = end_label.lower()
+        is_capture = move.is_capture or (cs.pieceList[move.end] is not None)
+
+        if moving_piece.upper() == "P":
+            if is_capture:
+                san_core = f"{start_label[0].lower()}x{dest_sq}"
+            else:
+                san_core = dest_sq
+            if move.promotionPiece != "":
+                san_core += f"={move.promotionPiece.upper()}"
+        else:
+            piece_letter = moving_piece.upper()
+            peers: list[int] = []
+            for sq_idx, p in enumerate(cs.pieceList):
+                if sq_idx != move.start and p == moving_piece:
+                    for cand in getMovesFromSquare(sq_idx, cs, True):
+                        if cand.end == move.end:
+                            peers.append(sq_idx)
+                            break
+            disambig = ""
+            if peers:
+                same_file = any((sq % 8) == start_col for sq in peers)
+                same_rank = any((7 - (sq // 8)) == start_row for sq in peers)
+                if not same_file:
+                    disambig = start_label[0].lower()
+                elif not same_rank:
+                    disambig = start_label[1]
+                else:
+                    disambig = start_label.lower()
+            capture_str = "x" if is_capture else ""
+            san_core = f"{piece_letter}{disambig}{capture_str}{dest_sq}"
+
+    next_state = cs.copy()
+    movePiece(move, next_state, False)
+    next_history = (list(history) if history else [cs.copy()]) + [next_state]
+    status = isGameOver(next_state, next_history)
+    if status == 1:
+        return f"{san_core}#"
+    if hasKingCollision(next_state):
+        return f"{san_core}+"
+    return san_core
+
+
+def inferMoveBetweenStates(prev_state: chessState, next_state: chessState) -> chessMove | None:
+    """Find the legal :class:`chessMove` that transitions ``prev_state`` to ``next_state``.
+
+    :param prev_state: Board state before the move.
+    :type prev_state: chessState
+    :param next_state: Board state after the move.
+    :type next_state: chessState
+    :return: Matching legal :class:`chessMove` or ``None`` if no legal move matches.
+    :rtype: chessMove | None
+    """
+    for candidate in getAllLegalMoves(prev_state):
+        test_state = prev_state.copy()
+        movePiece(candidate, test_state, False)
+        if (
+            test_state.pieceList == next_state.pieceList
+            and test_state.turn == next_state.turn
+        ):
+            return candidate
+    return None

@@ -1,6 +1,8 @@
-"""Move history log for storing and navigating sequential chess states."""
+"""Move history log for storing, navigating, and exporting sequential chess states."""
 
-from chessState import chessState
+from datetime import date
+from chessState import chessState, START_FEN
+from chessAdmin import inferMoveBetweenStates, isGameOver, moveToSAN
 
 
 class gameLog:
@@ -93,3 +95,89 @@ class gameLog:
         sub_log = self.log[: end_idx + 1]
         target_key = sub_log[-1].getPositionKey()
         return sum(1 for state in sub_log if state.getPositionKey() == target_key) >= 3
+
+    def toPGN(
+        self,
+        white_name: str = "White",
+        black_name: str = "Black",
+        event: str = "Stocky Chess Game",
+        site: str = "Local",
+        game_date: str | None = None,
+        result: str | None = None,
+        up_to_index: int | None = None,
+    ) -> str:
+        """Serialize the recorded game history into Portable Game Notation (PGN).
+
+        Includes standard Seven Tag Roster headers, optional ``SetUp`` and ``FEN``
+        headers when starting from a custom position, Standard Algebraic Notation (SAN)
+        move text, and the game result token.
+
+        :param white_name: Name of the White player.
+        :type white_name: str
+        :param black_name: Name of the Black player.
+        :type black_name: str
+        :param event: PGN Event tag value.
+        :type event: str
+        :param site: PGN Site tag value.
+        :type site: str
+        :param game_date: Date in ``YYYY.MM.DD`` format (defaults to today).
+        :type game_date: str | None
+        :param result: Explicit PGN result (``'1-0'``, ``'0-1'``, ``'1/2-1/2'``, ``'*'``),
+            or ``None`` to infer from the final position.
+        :type result: str | None
+        :param up_to_index: Optional final history index to export.
+        :type up_to_index: int | None
+        :return: Complete PGN string.
+        :rtype: str
+        """
+        if not self.log:
+            self.reset()
+
+        end_idx = len(self.log) - 1 if up_to_index is None else max(0, min(up_to_index, len(self.log) - 1))
+        states = self.log[: end_idx + 1]
+        final_state = states[-1]
+
+        if result is None:
+            status = isGameOver(final_state, states)
+            if status == 1:
+                result = "0-1" if final_state.turn == "w" else "1-0"
+            elif status == 2:
+                result = "1/2-1/2"
+            else:
+                result = "*"
+
+        date_str = game_date or date.today().strftime("%Y.%m.%d")
+        headers = [
+            f'[Event "{event}"]',
+            f'[Site "{site}"]',
+            f'[Date "{date_str}"]',
+            '[Round "1"]',
+            f'[White "{white_name}"]',
+            f'[Black "{black_name}"]',
+            f'[Result "{result}"]',
+        ]
+
+        initial_fen = states[0].getFENstring()
+        if initial_fen != START_FEN:
+            headers.append('[SetUp "1"]')
+            headers.append(f'[FEN "{initial_fen}"]')
+
+        tokens: list[str] = []
+        for i in range(len(states) - 1):
+            prev_s = states[i]
+            next_s = states[i + 1]
+            move = inferMoveBetweenStates(prev_s, next_s)
+            if move is None:
+                break
+            san = moveToSAN(move, prev_s, states[: i + 1])
+            if prev_s.turn == "w":
+                tokens.append(f"{prev_s.full_move}. {san}")
+            else:
+                if i == 0:
+                    tokens.append(f"{prev_s.full_move}... {san}")
+                else:
+                    tokens.append(san)
+
+        tokens.append(result)
+        movetext = " ".join(tokens)
+        return "\n".join(headers) + "\n\n" + movetext + "\n"

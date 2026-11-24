@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QSpinBox,
     QCheckBox,
     QComboBox,
+    QFileDialog,
 )
 from PyQt6.QtCore import QTimer
 from chessBoard import chessBoard_widget, get_resource_path
@@ -51,7 +52,7 @@ class Ui(QtWidgets.QMainWindow):
     :vartype version: str
     """
 
-    version = "2.3.0"
+    version = "2.4.0"
 
     def __init__(self):
         """Initialize the main window, board widget, signal connections, and default game state."""
@@ -111,6 +112,8 @@ class Ui(QtWidgets.QMainWindow):
         self.actionSetWhiteTimeControlMode.triggered.connect(lambda: self.setTimeControlMode("w"))
         self.actionSetBlackTimeControlMode.triggered.connect(lambda: self.setTimeControlMode("b"))
         self.actionImport_FEN.triggered.connect(self.setFENstate)
+        if hasattr(self, "actionExport_PGN"):
+            self.actionExport_PGN.triggered.connect(self.exportPGNstate)
         if hasattr(self, "actionStart_Pause_Bot"):
             self.actionStart_Pause_Bot.triggered.connect(self.toggleBotPause)
         if hasattr(self, "actionSelect_Engine"):
@@ -839,6 +842,78 @@ class Ui(QtWidgets.QMainWindow):
         dlg.layout.addWidget(message)
         dlg.layout.addWidget(text)
         dlg.layout.addWidget(button)
+        dlg.setLayout(dlg.layout)
+        dlg.exec()
+
+    def generatePGNString(self) -> str:
+        """Generate the PGN string for the current game up to :attr:`gameRenderIndex`.
+
+        :return: Formatted PGN text.
+        :rtype: str
+        """
+        white_label = self.whiteType.text().strip() if hasattr(self, "whiteType") else "White"
+        black_label = self.blackType.text().strip() if hasattr(self, "blackType") else "Black"
+        result_override: str | None = None
+        if self.gameClickHandler.action_state == "TIMEOUT":
+            if self.whiteMS <= 0:
+                result_override = "0-1"
+            elif self.blackMS <= 0:
+                result_override = "1-0"
+        return self.gameLog.toPGN(
+            white_name=white_label or "White",
+            black_name=black_label or "Black",
+            result=result_override,
+            up_to_index=self.gameRenderIndex,
+        )
+
+    def exportPGNstate(self):
+        """Open a dialog displaying the game's PGN with options to copy or save to a ``.pgn`` file."""
+        pgn_text = self.generatePGNString()
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Export PGN")
+        dlg.layout = QVBoxLayout()
+        dlg.layout.addWidget(QLabel("Portable Game Notation (PGN):"))
+
+        text = QTextEdit()
+        text.setPlainText(pgn_text)
+        dlg.layout.addWidget(text)
+
+        btnLayout = QHBoxLayout()
+        copyBtn = QPushButton("Copy to Clipboard")
+        saveBtn = QPushButton("Save to File...")
+        closeBtn = QPushButton("Close")
+        btnLayout.addWidget(copyBtn)
+        btnLayout.addWidget(saveBtn)
+        btnLayout.addWidget(closeBtn)
+        dlg.layout.addLayout(btnLayout)
+
+        def do_copy():
+            clipboard = QtWidgets.QApplication.clipboard()
+            if clipboard is not None:
+                clipboard.setText(text.toPlainText())
+            self.print_to_console("Copied PGN to clipboard.")
+
+        def do_save():
+            file_path, _ = QFileDialog.getSaveFileName(
+                dlg,
+                "Save PGN File",
+                "game.pgn",
+                "PGN Files (*.pgn);;All Files (*)",
+            )
+            if file_path:
+                try:
+                    with open(file_path, "w", encoding="utf-8") as f:
+                        f.write(text.toPlainText())
+                    self.print_to_console(f"Exported PGN to {file_path}")
+                    dlg.close()
+                except OSError as exc:
+                    self.print_to_console(f"Failed to save PGN file: {exc}")
+
+        copyBtn.pressed.connect(do_copy)
+        saveBtn.pressed.connect(do_save)
+        closeBtn.pressed.connect(lambda: dlg.close())
+
         dlg.setLayout(dlg.layout)
         dlg.exec()
 

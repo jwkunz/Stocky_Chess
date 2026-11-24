@@ -2,6 +2,7 @@
 
 import pytest
 from chessState import chessState, player_t, piece_t, START_FEN
+from chessAdmin import chessMove, movePiece
 from gameLog import gameLog
 
 
@@ -99,3 +100,35 @@ def test_enums():
     assert player_t.WHITE.value == 1
     assert piece_t.KING.value == 0
     assert piece_t.PAWN.value == 5
+
+
+def test_pgn_export_fools_mate_and_custom_fen(fresh_game_log: gameLog, fen_state):
+    """Verify gameLog.toPGN generates valid PGN headers, SAN moves, and checkmate result."""
+    cur = fresh_game_log.currentGame().copy()
+    # 1. f3 e5 2. g4 Qh4#
+    moves = [
+        chessMove(53, 45),              # f2-f3
+        chessMove(12, 28, enpassantFlag=True),  # e7-e5
+        chessMove(54, 38, enpassantFlag=True),  # g2-g4
+        chessMove(3, 39),               # Qd8-h4#
+    ]
+    for m in moves:
+        movePiece(m, cur)
+        fresh_game_log.addState(cur)
+
+    pgn = fresh_game_log.toPGN(white_name="Human", black_name="Plum Chess", game_date="2026.11.24")
+    assert '[White "Human"]' in pgn
+    assert '[Black "Plum Chess"]' in pgn
+    assert '[Result "0-1"]' in pgn
+    assert "1. f3 e5 2. g4 Qh4# 0-1" in pgn
+
+    # Custom FEN starting on Black's turn
+    custom_log = gameLog()
+    start_b = fen_state("r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1")
+    custom_log.log = [start_b]
+    next_b = start_b.copy()
+    movePiece(chessMove(4, 6, castleRookSquares=[7, 5]), next_b)
+    custom_log.addState(next_b)
+    custom_pgn = custom_log.toPGN()
+    assert '[SetUp "1"]' in custom_pgn
+    assert "1... O-O *" in custom_pgn

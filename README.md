@@ -7,8 +7,9 @@ on the same computer, or pit two independent, heterogeneous UCI engines against 
 optional chess clocks.
 
 The rules of chess — including move generation, check detection, castling, en passant, pawn
-promotion, the fifty-move rule, and insufficient-material draws — are implemented natively in this
-project. UCI engines are run in a non-blocking background harness to choose computer moves.
+promotion, threefold repetition, the fifty-move rule, and insufficient-material draws — are
+implemented natively in this project. UCI engines are run in a non-blocking background harness to
+choose computer moves.
 
 ## Features
 
@@ -26,12 +27,13 @@ project. UCI engines are run in a non-blocking background harness to choose comp
 - **Chess clocks.** Set the starting time (hours, minutes, seconds) and a per-move increment for each
   player, or turn the clock off. Because engine searches run asynchronously in a background thread,
   the GUI and chess clocks update smoothly every 100 ms during bot vs. bot games.
-- **Game end detection.** Checkmate, stalemate, fifty-move draws, insufficient-material draws, and
-  loss on time are announced.
+- **Game end detection.** Checkmate, stalemate, threefold repetition draws, fifty-move draws,
+  insufficient-material draws, and loss on time are announced.
 - **Move history & branching.** Step backward and forward through the game with the **PREVIOUS** and
   **NEXT** buttons, and play a new move from any historical position to branch the game.
-- **FEN support.** The current position is shown as a validated FEN string, and any valid position
-  can be loaded with **Game > Import FEN**.
+- **FEN & PGN support.** The current position is shown as a validated FEN string, any valid position
+  can be loaded with **Game > Import FEN**, and full games can be exported in Standard Algebraic
+  Notation with **Game > Export PGN**.
 - **Material count.** A panel shows the active pieces and material balance for each side.
 - **Flip the board** to put either color at the bottom.
 
@@ -99,11 +101,6 @@ Run the `pytest` suite from the repository root:
 
 API documentation generated with Sphinx is hosted on GitHub Pages at
 [https://jwkunz.github.io/Stocky_Chess/](https://jwkunz.github.io/Stocky_Chess/).
-
-## Known limitations
-
-- Draws by threefold repetition are not detected.
-- The *Export PGN* menu item is present but not implemented.
 
 ## License
 
