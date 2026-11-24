@@ -429,27 +429,72 @@ def hasInsufficientMaterial(cs: chessState) -> bool:
     return False
 
 
-def isGameOver(cs: chessState) -> int:
+def isFiftyMoveRule(cs: chessState) -> bool:
+    """Return ``True`` if the 50-move rule (100 half-moves without pawn advance or capture) is reached.
+
+    :param cs: Board state to inspect.
+    :type cs: chessState
+    :return: ``True`` if ``cs.half_move >= 100``.
+    :rtype: bool
+    """
+    return cs.half_move >= 100
+
+
+def isThreefoldRepetition(cs: chessState, history: list[chessState] | None = None) -> bool:
+    """Return ``True`` if ``cs`` has occurred at least three times in ``history``.
+
+    Compares the 4-field position key (board, turn, castling rights, and en passant target).
+    If ``history`` already ends with ``cs``, counts occurrences across ``history`` directly;
+    otherwise includes ``cs`` as an additional occurrence.
+
+    :param cs: Current board state to test.
+    :type cs: chessState
+    :param history: Chronological sequence of board states in the game.
+    :type history: list[chessState] | None
+    :return: ``True`` if the position has been repeated at least three times.
+    :rtype: bool
+    """
+    if not history:
+        return False
+    target_key = cs.getPositionKey()
+    count = sum(1 for state in history if state.getPositionKey() == target_key)
+    if history[-1] != cs:
+        count += 1
+    return count >= 3
+
+
+def isGameOver(cs: chessState, history: list[chessState] | None = None) -> int:
     """Check whether the current position is checkmate, stalemate/draw, or ongoing.
+
+    Evaluates checkmate/stalemate first, then checks the 50-move inaction rule,
+    threefold repetition, and insufficient material.
 
     :param cs: Chess state to evaluate for the side to move.
     :type cs: chessState
-    :return: ``0`` if legal moves exist, ``1`` for checkmate, or ``2`` for stalemate/draw.
+    :param history: Optional list of historical states for threefold repetition detection.
+    :type history: list[chessState] | None
+    :return: ``0`` if legal moves exist and no draw rule is triggered, ``1`` for checkmate,
+        or ``2`` for stalemate/draw.
     :rtype: int
     """
-    if cs.half_move >= 100 or hasInsufficientMaterial(cs):
-        return 2
-
     is_white = cs.turn == "w"
+    has_legal_move = False
     for idx, piece in enumerate(cs.pieceList):
         if piece is not None and (piece.isupper() == is_white):
             moves = getMovesFromSquare(idx, cs, True)
             if len(moves) > 0:
-                return 0
+                has_legal_move = True
+                break
 
-    if hasKingCollision(cs):
-        return 1
-    return 2
+    if not has_legal_move:
+        if hasKingCollision(cs):
+            return 1
+        return 2
+
+    if isFiftyMoveRule(cs) or isThreefoldRepetition(cs, history) or hasInsufficientMaterial(cs):
+        return 2
+
+    return 0
 
 
 def getAllLegalMoves(cs: chessState) -> list[chessMove]:

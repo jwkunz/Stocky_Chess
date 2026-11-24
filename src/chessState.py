@@ -144,6 +144,17 @@ class chessState:
         ep = self.enpassant_targets.lower() if self.enpassant_targets != "-" else "-"
         return f"{board_part} {self.turn} {fen_castle} {ep} {self.half_move} {self.full_move}"
 
+    def getPositionKey(self) -> str:
+        """Return the four-field FEN position key used for threefold repetition detection.
+
+        Includes piece placement, active color, castling availability, and en passant target.
+
+        :return: Space-delimited 4-field position signature.
+        :rtype: str
+        """
+        fields = self.getFENstring().split()
+        return " ".join(fields[:4])
+
     def setFENstring(self, fen: str):
         """Populate and validate the board state from a Forsyth-Edwards Notation (FEN) string.
 

@@ -51,7 +51,7 @@ class Ui(QtWidgets.QMainWindow):
     :vartype version: str
     """
 
-    version = "2.2.1"
+    version = "2.3.0"
 
     def __init__(self):
         """Initialize the main window, board widget, signal connections, and default game state."""
@@ -891,8 +891,9 @@ class Ui(QtWidgets.QMainWindow):
 
     def _startAsyncEngineTurn(self, engine: uciEngine, active_state: chessState):
         """Launch a non-blocking background search on ``engine`` for ``active_state``."""
-        if isGameOver(active_state) != 0:
-            self.gameClickHandler._updateGameEndState(active_state, self)
+        history = self.gameLog.log[: self.gameRenderIndex + 1]
+        if isGameOver(active_state, history) != 0:
+            self.gameClickHandler._updateGameEndState(active_state, self, self.gameLog)
             self._checkAndAnnounceGameOver()
             return
         self._active_search_engine = engine

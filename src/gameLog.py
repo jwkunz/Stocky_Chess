@@ -76,3 +76,20 @@ class gameLog:
         :rtype: chessState
         """
         return self.currentGame()
+
+    def isThreefoldRepetition(self, up_to_index: int | None = None) -> bool:
+        """Return ``True`` if the position at ``up_to_index`` (or latest) has occurred at least 3 times.
+
+        :param up_to_index: Optional last index in :attr:`log` to include.
+        :type up_to_index: int | None
+        :return: ``True`` if threefold repetition is reached.
+        :rtype: bool
+        """
+        if not self.log:
+            return False
+        end_idx = len(self.log) - 1 if up_to_index is None else min(up_to_index, len(self.log) - 1)
+        if end_idx < 0:
+            return False
+        sub_log = self.log[: end_idx + 1]
+        target_key = sub_log[-1].getPositionKey()
+        return sum(1 for state in sub_log if state.getPositionKey() == target_key) >= 3

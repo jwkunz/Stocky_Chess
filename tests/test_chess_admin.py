@@ -10,9 +10,11 @@ from chessAdmin import (
     getAllLegalMoves,
     getMovesFromSquare,
     hasInsufficientMaterial,
-     hasKingCollision,
+    hasKingCollision,
+    isFiftyMoveRule,
     isGameOver,
     isSquareAttacked,
+    isThreefoldRepetition,
     movePiece,
     squareUp,
     squareDown,
@@ -144,3 +146,37 @@ def test_pawn_promotion_generates_only_four_choices_with_capture_flag(fen_state)
     assert len(capture_moves) == 4
     assert {m.promotionPiece for m in capture_moves} == {"Q", "R", "B", "N"}
     assert all(m.is_capture for m in capture_moves)
+
+
+def test_fifty_move_rule_and_threefold_repetition(starting_state: chessState):
+    """Verify 50-move inaction rule and threefold repetition detection."""
+    s50 = starting_state.copy()
+    s50.half_move = 99
+    assert isFiftyMoveRule(s50) is False
+    assert isGameOver(s50) == 0
+    s50.half_move = 100
+    assert isFiftyMoveRule(s50) is True
+    assert isGameOver(s50) == 2
+
+    # Play Ng1-f3, Nb8-c6, Nf3-g1, Nc6-b8 twice to reach the starting position 3 times
+    history = [starting_state.copy()]
+    current = starting_state.copy()
+    cycle = [
+        chessMove(62, 45),  # Ng1-f3
+        chessMove(1, 18),   # Nb8-c6
+        chessMove(45, 62),  # Nf3-g1
+        chessMove(18, 1),   # Nc6-b8
+    ]
+    for move in cycle:
+        movePiece(move, current)
+        history.append(current.copy())
+    # Starting position has appeared twice so far
+    assert isThreefoldRepetition(current, history) is False
+    assert isGameOver(current, history) == 0
+
+    for move in cycle:
+        movePiece(move, current)
+        history.append(current.copy())
+    # Starting position has now appeared 3 times
+    assert isThreefoldRepetition(current, history) is True
+    assert isGameOver(current, history) == 2

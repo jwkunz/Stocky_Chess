@@ -7,8 +7,11 @@ from chessAdmin import (
     convertLabel,
     getAllLegalMoves,
     getMovesFromSquare,
+    hasInsufficientMaterial,
     hasKingCollision,
+    isFiftyMoveRule,
     isGameOver,
+    isThreefoldRepetition,
 )
 from gameLog import gameLog
 from PyQt6.QtWidgets import QMainWindow
@@ -47,9 +50,15 @@ class gameClickHandler:
         else:
             self.action_state = "BLACK_SELECT_PIECE"
 
-    def _updateGameEndState(self, cs: chessState, mainWindow: QMainWindow | None = None):
+    def _updateGameEndState(
+        self,
+        cs: chessState,
+        mainWindow: QMainWindow | None = None,
+        gl: gameLog | None = None,
+    ):
         """Evaluate whether ``cs`` has ended in checkmate or stalemate/draw and update state."""
-        status = isGameOver(cs)
+        history = gl.log if gl is not None else None
+        status = isGameOver(cs, history)
         if status == 0:
             self.action_state = "WHITE_SELECT_PIECE" if cs.turn == "w" else "BLACK_SELECT_PIECE"
         elif status == 1:
@@ -64,8 +73,16 @@ class gameClickHandler:
         elif status == 2:
             self.action_state = "STALEMATE"
             if mainWindow is not None:
-                mainWindow.whiteDisplay.append("Game ends in stalemate")
-                mainWindow.blackDisplay.append("Game ends in stalemate")
+                if isThreefoldRepetition(cs, history):
+                    reason = "Game ends in stalemate (threefold repetition)"
+                elif isFiftyMoveRule(cs):
+                    reason = "Game ends in stalemate (50-move rule)"
+                elif hasInsufficientMaterial(cs):
+                    reason = "Game ends in stalemate (insufficient material)"
+                else:
+                    reason = "Game ends in stalemate"
+                mainWindow.whiteDisplay.append(reason)
+                mainWindow.blackDisplay.append(reason)
 
     def _F1(self, idx: int, nextState: str, cs: chessState, cb: chessBoard_widget):
         """Compute legal moves for the selected square, highlight them, and advance state.
@@ -129,7 +146,7 @@ class gameClickHandler:
                 self.action_idx = None
                 mainWindow.movePieceWithAnimation(m, cs)
                 gl.addState(cs)
-                self._updateGameEndState(cs, mainWindow)
+                self._updateGameEndState(cs, mainWindow, gl)
                 cb.renderBoard(cs)
                 return
 
@@ -186,20 +203,20 @@ class gameClickHandler:
         :param mainWindow: Main window instance for timer updates and move narration.
         :type mainWindow: QMainWindow
         """
-        if isGameOver(cs) != 0:
-            self._updateGameEndState(cs, mainWindow)
+        if isGameOver(cs, gl.log) != 0:
+            self._updateGameEndState(cs, mainWindow, gl)
             return
 
         selectedMove = self._resolveEngineMove(bestMove, cs)
         if selectedMove is None:
-            self._updateGameEndState(cs, mainWindow)
+            self._updateGameEndState(cs, mainWindow, gl)
             return
 
         self.highlighed_moves = []
         self.action_idx = None
         mainWindow.movePieceWithAnimation(selectedMove, cs)
         gl.addState(cs)
-        self._updateGameEndState(cs, mainWindow)
+        self._updateGameEndState(cs, mainWindow, gl)
         cb.renderBoard(cs)
 
     def engineHandler(
@@ -223,8 +240,8 @@ class gameClickHandler:
         :param mainWindow: Main window instance for timer updates and move narration.
         :type mainWindow: QMainWindow
         """
-        if isGameOver(cs) != 0:
-            self._updateGameEndState(cs, mainWindow)
+        if isGameOver(cs, gl.log) != 0:
+            self._updateGameEndState(cs, mainWindow, gl)
             return
 
         bestMove = engine.request_move(cs.getFENstring())
