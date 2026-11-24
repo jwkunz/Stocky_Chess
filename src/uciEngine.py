@@ -1,12 +1,401 @@
-"""UCI engine wrapper for communicating with a Stockfish subprocess."""
+"""UCI engine wrapper, cross-platform engine discovery, and GitHub release downloader."""
 
+import json
 import os
+import platform
 import shutil
+import stat
 import subprocess
+import tarfile
+import tempfile
+import urllib.request
+import zipfile
+from dataclasses import dataclass
+from pathlib import Path
+
+
+@dataclass
+class EngineSpec:
+    """Metadata describing a supported UCI chess engine.
+
+    :ivar key: Short identifier key (e.g. ``'stockfish'``, ``'plum_chess'``).
+    :vartype key: str
+    :ivar display_name: Human-readable engine name.
+    :vartype display_name: str
+    :ivar binary_names: Candidate executable names searched on the system.
+    :vartype binary_names: tuple[str, ...]
+    :ivar github_repo: Optional ``owner/repo`` on GitHub for downloading releases.
+    :vartype github_repo: str | None
+    """
+
+    key: str
+    display_name: str
+    binary_names: tuple[str, ...]
+    github_repo: str | None = None
+
+
+KNOWN_ENGINES: tuple[EngineSpec, ...] = (
+    EngineSpec(
+        key="stockfish",
+        display_name="Stockfish",
+        binary_names=("stockfish", "stockfish.exe"),
+        github_repo="official-stockfish/Stockfish",
+    ),
+    EngineSpec(
+        key="plum_chess",
+        display_name="Plum Chess",
+        binary_names=("plum_chess", "plum_chess.exe", "Plum_Chess", "Plum_Chess.exe"),
+        github_repo="jwkunz/Plum_Chess",
+    ),
+    EngineSpec(
+        key="lc0",
+        display_name="Leela Chess Zero (Lc0)",
+        binary_names=("lc0", "lc0.exe"),
+        github_repo=None,
+    ),
+    EngineSpec(
+        key="komodo",
+        display_name="Komodo",
+        binary_names=("komodo", "komodo.exe"),
+        github_repo=None,
+    ),
+    EngineSpec(
+        key="ethereal",
+        display_name="Ethereal",
+        binary_names=("ethereal", "ethereal.exe"),
+        github_repo=None,
+    ),
+    EngineSpec(
+        key="crafty",
+        display_name="Crafty",
+        binary_names=("crafty", "crafty.exe"),
+        github_repo=None,
+    ),
+    EngineSpec(
+        key="fruit",
+        display_name="Fruit",
+        binary_names=("fruit", "fruit.exe"),
+        github_repo=None,
+    ),
+    EngineSpec(
+        key="glaurung",
+        display_name="Glaurung",
+        binary_names=("glaurung", "glaurung.exe"),
+        github_repo=None,
+    ),
+    EngineSpec(
+        key="toga2",
+        display_name="Toga II",
+        binary_names=("toga2", "toga2.exe"),
+        github_repo=None,
+    ),
+)
+
+
+def get_engines_dir() -> Path:
+    """Return the local directory where downloaded engines are stored.
+
+    :return: Path to the ``engines/`` directory inside the project or user home.
+    :rtype: Path
+    """
+    repo_engines = Path("engines")
+    return repo_engines
+
+
+def _common_search_dirs() -> list[Path]:
+    """Return OS-independent common directories where chess engines may be installed."""
+    dirs: list[Path] = [
+        get_engines_dir(),
+        Path.cwd(),
+        Path.cwd() / "engines",
+        Path.home() / ".local" / "bin",
+        Path.home() / "bin",
+    ]
+    if os.name == "nt":
+        for env_var in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"):
+            val = os.environ.get(env_var)
+            if val:
+                base = Path(val)
+                dirs.extend([base / "Stockfish", base / "Plum_Chess", base / "chess"])
+    else:
+        dirs.extend(
+            [
+                Path("/usr/games"),
+                Path("/usr/local/games"),
+                Path("/usr/local/bin"),
+                Path("/usr/bin"),
+                Path("/opt/homebrew/bin"),
+            ]
+        )
+    return dirs
+
+
+def find_engine_binary(spec: EngineSpec, extra_dirs: list[Path] | None = None) -> str | None:
+    """Search PATH and common engine directories for a given :class:`EngineSpec`.
+
+    :param spec: Engine specification to search for.
+    :type spec: EngineSpec
+    :param extra_dirs: Optional additional directories to inspect first.
+    :type extra_dirs: list[Path] | None
+    :return: Resolved path to the executable if found, otherwise ``None``.
+    :rtype: str | None
+    """
+    search_dirs = (list(extra_dirs) if extra_dirs else []) + _common_search_dirs()
+
+    for d in search_dirs:
+        if not d.is_dir():
+            continue
+        for name in spec.binary_names:
+            candidate = d / name
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return str(candidate.resolve())
+        # Also check any matching prefix files in the engines directory (e.g. plum_chess-v7.16.0-linux-x86_64)
+        try:
+            for child in sorted(d.iterdir(), reverse=True):
+                if child.is_file() and os.access(child, os.X_OK):
+                    lower_name = child.name.lower()
+                    if lower_name.startswith(spec.key.lower()) and not lower_name.endswith((".zip", ".tar.gz", ".tgz", ".py")):
+                        return str(child.resolve())
+        except OSError:
+            pass
+
+    for name in spec.binary_names:
+        found = shutil.which(name)
+        if found:
+            return found
+
+    return None
+
+
+def discover_engines(extra_dirs: list[Path] | None = None) -> list[dict]:
+    """Query the system for known chess engines and report their installation status.
+
+    :param extra_dirs: Optional additional directories to search.
+    :type extra_dirs: list[Path] | None
+    :return: List of dictionaries with keys ``key``, ``display_name``, ``path``,
+        ``installed``, and ``downloadable``.
+    :rtype: list[dict]
+    """
+    results: list[dict] = []
+    for spec in KNOWN_ENGINES:
+        path = find_engine_binary(spec, extra_dirs=extra_dirs)
+        results.append(
+            {
+                "key": spec.key,
+                "display_name": spec.display_name,
+                "path": path,
+                "installed": path is not None,
+                "downloadable": spec.github_repo is not None,
+                "github_repo": spec.github_repo,
+            }
+        )
+    return results
+
+
+def detect_system_platform() -> tuple[str, str]:
+    """Return normalized ``(os_name, arch)`` for the current host.
+
+    ``os_name`` is one of ``'linux'``, ``'windows'``, or ``'macos'``.
+    ``arch`` is one of ``'x86_64'``, ``'arm64'``, or the lowercased machine string.
+
+    :return: Tuple ``(os_name, arch)``.
+    :rtype: tuple[str, str]
+    """
+    sys_raw = platform.system().lower()
+    if sys_raw.startswith("win") or os.name == "nt":
+        os_name = "windows"
+    elif sys_raw == "darwin":
+        os_name = "macos"
+    else:
+        os_name = "linux"
+
+    machine_raw = platform.machine().lower()
+    if machine_raw in ("x86_64", "amd64"):
+        arch = "x86_64"
+    elif machine_raw in ("aarch64", "arm64"):
+        arch = "arm64"
+    else:
+        arch = machine_raw
+
+    return (os_name, arch)
+
+
+def select_release_asset(
+    assets: list[dict],
+    os_name: str | None = None,
+    arch: str | None = None,
+) -> dict | None:
+    """Select the best matching GitHub release asset for the target OS and CPU architecture.
+
+    :param assets: List of GitHub release asset dicts containing ``'name'`` and ``'browser_download_url'``.
+    :type assets: list[dict]
+    :param os_name: Normalized OS name (``'linux'``, ``'windows'``, ``'macos'``).
+    :type os_name: str | None
+    :param arch: Normalized CPU architecture (``'x86_64'``, ``'arm64'``).
+    :type arch: str | None
+    :return: Matching asset dictionary, or ``None`` if no compatible asset is found.
+    :rtype: dict | None
+    """
+    if os_name is None or arch is None:
+        det_os, det_arch = detect_system_platform()
+        os_name = os_name or det_os
+        arch = arch or det_arch
+
+    os_tokens = {
+        "linux": ("linux",),
+        "windows": ("windows", "win"),
+        "macos": ("macos", "darwin", "osx", "mac"),
+    }.get(os_name, (os_name,))
+
+    arch_tokens = {
+        "x86_64": ("x86_64", "x86-64", "amd64", "x64"),
+        "arm64": ("arm64", "aarch64"),
+    }.get(arch, (arch,))
+
+    scored: list[tuple[int, dict]] = []
+    for asset in assets:
+        name = asset.get("name", "").lower()
+        if "android" in name or name.endswith((".sha256", ".sig", ".txt")):
+            continue
+        if not any(tok in name for tok in os_tokens):
+            continue
+
+        score = 10
+        if any(tok in name for tok in arch_tokens):
+            score += 20
+        elif "universal" in name:
+            score += 10
+        else:
+            continue
+
+        if "universal" in name:
+            score += 5
+        if "avx512" in name or "vnni" in name:
+            score -= 5
+        scored.append((score, asset))
+
+    if not scored:
+        return None
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return scored[0][1]
+
+
+def download_engine(
+    engine_key: str,
+    target_dir: Path | None = None,
+    os_name: str | None = None,
+    arch: str | None = None,
+) -> str:
+    """Download and extract the latest release of ``engine_key`` for the current architecture.
+
+    Supports both direct binary assets (such as ``Plum_Chess``) and compressed archives
+    (``.tar.gz`` / ``.zip`` such as ``Stockfish``).
+
+    :param engine_key: Engine identifier (e.g. ``'stockfish'`` or ``'plum_chess'``).
+    :type engine_key: str
+    :param target_dir: Destination directory for the executable (defaults to :func:`get_engines_dir`).
+    :type target_dir: Path | None
+    :param os_name: Optional OS override for testing.
+    :type os_name: str | None
+    :param arch: Optional architecture override for testing.
+    :type arch: str | None
+    :return: Absolute path to the downloaded and executable engine binary.
+    :rtype: str
+    :raises ValueError: If the engine key is unknown or has no GitHub repository.
+    :raises RuntimeError: If no matching release asset is found or download fails.
+    """
+    spec = next((s for s in KNOWN_ENGINES if s.key == engine_key), None)
+    if spec is None or not spec.github_repo:
+        raise ValueError(f"Engine '{engine_key}' does not support automatic download.")
+
+    if os_name is None or arch is None:
+        det_os, det_arch = detect_system_platform()
+        os_name = os_name or det_os
+        arch = arch or det_arch
+
+    dest_dir = Path(target_dir) if target_dir is not None else get_engines_dir()
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    api_url = f"https://api.github.com/repos/{spec.github_repo}/releases/latest"
+    req = urllib.request.Request(
+        api_url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "Stocky-Chess-Updater",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            release_data = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        raise RuntimeError(f"Failed to query GitHub releases for {spec.display_name}: {exc}") from exc
+
+    assets = release_data.get("assets", [])
+    asset = select_release_asset(assets, os_name=os_name, arch=arch)
+    if asset is None:
+        raise RuntimeError(
+            f"No compatible release asset found for {spec.display_name} on {os_name}/{arch}."
+        )
+
+    download_url = asset["browser_download_url"]
+    asset_name = asset["name"]
+    binary_filename = f"{spec.key}.exe" if os_name == "windows" else spec.key
+    final_binary_path = dest_dir / binary_filename
+
+    dl_req = urllib.request.Request(
+        download_url,
+        headers={"User-Agent": "Stocky-Chess-Updater"},
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir) / asset_name
+        try:
+            with urllib.request.urlopen(dl_req, timeout=120) as resp, open(tmp_path, "wb") as out_file:
+                shutil.copyfileobj(resp, out_file)
+        except Exception as exc:
+            raise RuntimeError(f"Failed to download {download_url}: {exc}") from exc
+
+        extract_dir = Path(tmpdir) / "extracted"
+        extract_dir.mkdir(parents=True, exist_ok=True)
+
+        lower_asset = asset_name.lower()
+        if lower_asset.endswith((".tar.gz", ".tgz")):
+            with tarfile.open(tmp_path, "r:gz") as tar:
+                tar.extractall(path=extract_dir, filter="data")
+            extracted_bin = _find_extracted_binary(extract_dir, spec)
+            shutil.copy2(extracted_bin, final_binary_path)
+        elif lower_asset.endswith(".zip"):
+            with zipfile.ZipFile(tmp_path, "r") as zf:
+                zf.extractall(path=extract_dir)
+            extracted_bin = _find_extracted_binary(extract_dir, spec)
+            shutil.copy2(extracted_bin, final_binary_path)
+        else:
+            shutil.copy2(tmp_path, final_binary_path)
+
+    current_mode = final_binary_path.stat().st_mode
+    final_binary_path.chmod(current_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return str(final_binary_path.resolve())
+
+
+def _find_extracted_binary(extract_dir: Path, spec: EngineSpec) -> Path:
+    """Locate the main engine executable inside an extracted archive directory."""
+    candidates: list[Path] = []
+    for root, _, files in os.walk(extract_dir):
+        for fname in files:
+            fpath = Path(root) / fname
+            lower = fname.lower()
+            if lower.endswith((".txt", ".md", ".pdf", ".1", ".cpp", ".h", ".o", ".nnue")):
+                continue
+            if fname in spec.binary_names or lower.startswith(spec.key.lower()):
+                candidates.append(fpath)
+    if not candidates:
+        raise RuntimeError(f"Could not find executable for {spec.display_name} in downloaded archive.")
+    candidates.sort(key=lambda p: p.stat().st_size, reverse=True)
+    return candidates[0]
 
 
 def resolve_stockfish_path(path: str | None = None) -> str:
-    """Resolve the path to a Stockfish executable across platforms.
+    """Resolve the path to a UCI engine executable across platforms.
 
     :param path: Explicit path or binary name, or ``None`` to auto-detect.
     :type path: str | None
@@ -17,42 +406,51 @@ def resolve_stockfish_path(path: str | None = None) -> str:
         resolved = shutil.which(path) or (path if os.path.isfile(path) else None)
         if resolved:
             return resolved
-    for candidate in ("stockfish", "stockfish.exe", "./stockfish", "./stockfish.exe"):
-        resolved = shutil.which(candidate) or (candidate if os.path.isfile(candidate) else None)
-        if resolved:
-            return resolved
+        by_key = next((s for s in KNOWN_ENGINES if s.key == path), None)
+        if by_key is not None:
+            found = find_engine_binary(by_key)
+            if found:
+                return found
+
+    for spec in KNOWN_ENGINES:
+        found = find_engine_binary(spec)
+        if found:
+            return found
+
     return path if path else ("stockfish.exe" if os.name == "nt" else "stockfish")
 
 
 class uciEngine:
-    """Manages a Stockfish engine subprocess via the Universal Chess Interface (UCI) protocol.
+    """Manages a UCI chess engine subprocess via the Universal Chess Interface protocol.
 
-    :ivar stockfish_process: The underlying Stockfish Popen process.
+    :ivar stockfish_process: The underlying engine Popen process.
     :vartype stockfish_process: subprocess.Popen | None
     :ivar current_state: Current state in the UCI handshake/search state machine.
     :vartype current_state: str
-    :ivar difficulty: Configured Stockfish Skill Level (0-20).
+    :ivar difficulty: Configured engine Skill Level (0-20).
     :vartype difficulty: int
     :ivar depth: Search depth passed to ``go depth``.
     :vartype depth: int
     :ivar inputFEN: Last FEN position requested for engine evaluation.
     :vartype inputFEN: str
+    :ivar engine_path: Resolved path to the engine binary.
+    :vartype engine_path: str
     """
 
     def __init__(self, path: str | None = None, difficulty: int = 20, moveDepth: int = 20):
-        """Launch Stockfish and run the UCI initialization state machine until ready.
+        """Launch a UCI engine and run the UCI initialization state machine until ready.
 
-        :param path: Path to the Stockfish executable. Defaults to auto-detecting
-            ``stockfish`` or ``stockfish.exe`` on PATH or in the working directory.
+        :param path: Path to the UCI engine executable. Defaults to auto-detecting
+            installed engines on PATH or in the ``engines/`` directory.
         :type path: str | None
-        :param difficulty: Stockfish Skill Level (0 to 20).
+        :param difficulty: Engine Skill Level (0 to 20).
         :type difficulty: int
         :param moveDepth: Search depth in plies.
         :type moveDepth: int
         """
-        resolved_path = resolve_stockfish_path(path)
+        self.engine_path = resolve_stockfish_path(path)
         self.stockfish_process = subprocess.Popen(
-            [resolved_path],
+            [self.engine_path],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -67,10 +465,10 @@ class uciEngine:
             self.tick()
         if self.current_state == "DONE":
             self.close()
-            raise RuntimeError("Stockfish process exited unexpectedly during UCI initialization.")
+            raise RuntimeError("UCI engine process exited unexpectedly during initialization.")
 
     def close(self):
-        """Cleanly terminate the underlying Stockfish subprocess."""
+        """Cleanly terminate the underlying UCI engine subprocess."""
         proc = getattr(self, "stockfish_process", None)
         if proc is not None:
             if proc.poll() is None:
@@ -86,7 +484,7 @@ class uciEngine:
             self.stockfish_process = None
 
     def request_move(self, fen: str) -> str | None:
-        """Request the best move from Stockfish for the given FEN position.
+        """Request the best move from the UCI engine for the given FEN position.
 
         Advances the UCI state machine safely until ``bestmove`` is returned or
         the engine stream closes.
@@ -110,7 +508,7 @@ class uciEngine:
         """Advance the UCI engine state machine by one step.
 
         :param args: Dictionary containing ``'inputFEN'`` when requesting a move, and
-            populated with ``'bestMove'`` once Stockfish responds.
+            populated with ``'bestMove'`` once the engine responds.
         :type args: dict | None
         """
         next_state = self.current_state
@@ -180,7 +578,7 @@ class uciEngine:
         self.current_state = next_state
 
     def write_stdin(self, message: str):
-        """Write a single UCI command line to the Stockfish process stdin.
+        """Write a single UCI command line to the engine process stdin.
 
         :param message: UCI command string (without trailing newline).
         :type message: str
@@ -190,7 +588,7 @@ class uciEngine:
             self.stockfish_process.stdin.flush()
 
     def read_stdout(self) -> bytes:
-        """Read a single line of output from the Stockfish process stdout.
+        """Read a single line of output from the engine process stdout.
 
         :return: Raw bytes line read from stdout (``b''`` on EOF).
         :rtype: bytes

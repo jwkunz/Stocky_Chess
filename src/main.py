@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QRadioButton,
     QSpinBox,
     QCheckBox,
+    QComboBox,
 )
 from PyQt6.QtCore import QTimer
 from chessBoard import chessBoard_widget
@@ -25,7 +26,13 @@ from chessAdmin import (
     getPiecetoTextName,
     hasKingCollision,
 )
-from uciEngine import uciEngine
+from uciEngine import (
+    uciEngine,
+    KNOWN_ENGINES,
+    discover_engines,
+    download_engine,
+    resolve_stockfish_path,
+)
 import sys
 import time
 
@@ -43,7 +50,7 @@ class Ui(QtWidgets.QMainWindow):
     :vartype version: str
     """
 
-    version = "2.0.5"
+    version = "2.1.0"
 
     def __init__(self):
         """Initialize the main window, board widget, signal connections, and default game state."""
@@ -65,6 +72,10 @@ class Ui(QtWidgets.QMainWindow):
 
         self.whiteEngine: uciEngine | None = None
         self.blackEngine: uciEngine | None = None
+        self.selectedEngineKey: str = "stockfish"
+        self.selectedEngineName: str = "Stockfish"
+        self.selectedEnginePath: str | None = None
+        self._initDefaultEngineSelection()
         self.botPaused: bool = True
         self._in_board_click: bool = False
 
@@ -89,6 +100,8 @@ class Ui(QtWidgets.QMainWindow):
         self.actionImport_FEN.triggered.connect(self.setFENstate)
         if hasattr(self, "actionStart_Pause_Bot"):
             self.actionStart_Pause_Bot.triggered.connect(self.toggleBotPause)
+        if hasattr(self, "actionSelect_Engine"):
+            self.actionSelect_Engine.triggered.connect(self.selectEngineDialog)
         if hasattr(self, "botPauseButton"):
             self.botPauseButton.pressed.connect(self.toggleBotPause)
         self.prevMove.pressed.connect(self.setPrevMove)
@@ -204,15 +217,146 @@ class Ui(QtWidgets.QMainWindow):
             self.blackEngine = None
             self.blackType.setText("HUMAN")
 
-    def setStockfish(self, color: str):
-        """Open a dialog to configure Stockfish skill level and depth for the given side.
+    def _initDefaultEngineSelection(self):
+        """Initialize the active engine selection from installed engines on the system."""
+        discovered = discover_engines()
+        for info in discovered:
+            if info["installed"]:
+                self.selectedEngineKey = info["key"]
+                self.selectedEngineName = info["display_name"]
+                self.selectedEnginePath = info["path"]
+                return
+        if discovered:
+            self.selectedEngineKey = discovered[0]["key"]
+            self.selectedEngineName = discovered[0]["display_name"]
+            self.selectedEnginePath = discovered[0]["path"]
+
+    def selectEngineDialog(self):
+        """Open a dialog to inspect discovered UCI engines, download missing ones, and select the active engine."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Select UCI Engine")
+        dlg.layout = QVBoxLayout()
+
+        dlg.layout.addWidget(QLabel("Available & Supported UCI Engines:"))
+        combo = QComboBox()
+        dlg.layout.addWidget(combo)
+
+        statusLabel = QLabel("")
+        dlg.layout.addWidget(statusLabel)
+
+        btnLayout = QHBoxLayout()
+        downloadBtn = QPushButton("Download Latest Release")
+        selectBtn = QPushButton("Use Selected Engine")
+        btnLayout.addWidget(downloadBtn)
+        btnLayout.addWidget(selectBtn)
+        dlg.layout.addLayout(btnLayout)
+
+        engine_records: list[dict] = []
+
+        def refresh_list(preferred_key: str | None = None):
+            nonlocal engine_records
+            target_key = preferred_key or self.selectedEngineKey
+            engine_records = discover_engines()
+            combo.blockSignals(True)
+            combo.clear()
+            selected_idx = 0
+            for idx, info in enumerate(engine_records):
+                if info["installed"]:
+                    tag = "Installed"
+                elif info["downloadable"]:
+                    tag = "Missing - Download Available"
+                else:
+                    tag = "Not Found"
+                combo.addItem(f"{info['display_name']} ({tag})", info["key"])
+                if info["key"] == target_key:
+                    selected_idx = idx
+            combo.setCurrentIndex(selected_idx)
+            combo.blockSignals(False)
+            on_selection_changed()
+
+        def on_selection_changed():
+            idx = combo.currentIndex()
+            if idx < 0 or idx >= len(engine_records):
+                return
+            info = engine_records[idx]
+            if info["installed"]:
+                statusLabel.setText(f"Installed at: {info['path']}")
+                selectBtn.setEnabled(True)
+                downloadBtn.setEnabled(bool(info["downloadable"]))
+                downloadBtn.setText("Re-download Latest" if info["downloadable"] else "Download Unavailable")
+            else:
+                if info["downloadable"]:
+                    statusLabel.setText(
+                        f"{info['display_name']} is not installed. Click Download to fetch the latest release from GitHub ({info['github_repo']})."
+                    )
+                    downloadBtn.setEnabled(True)
+                    downloadBtn.setText("Download Latest Release")
+                else:
+                    statusLabel.setText(f"{info['display_name']} was not found on system PATH.")
+                    downloadBtn.setEnabled(False)
+                    downloadBtn.setText("Download Unavailable")
+                selectBtn.setEnabled(False)
+
+        def do_download():
+            idx = combo.currentIndex()
+            if idx < 0 or idx >= len(engine_records):
+                return
+            info = engine_records[idx]
+            statusLabel.setText(f"Downloading {info['display_name']}...")
+            dlg.repaint()
+            try:
+                installed_path = download_engine(info["key"])
+                self.print_to_console(f"Downloaded {info['display_name']} to {installed_path}")
+                refresh_list(preferred_key=info["key"])
+            except Exception as exc:
+                statusLabel.setText(f"Download failed: {exc}")
+                self.print_to_console(f"Failed to download {info['display_name']}: {exc}")
+
+        def do_select():
+            idx = combo.currentIndex()
+            if idx < 0 or idx >= len(engine_records):
+                return
+            info = engine_records[idx]
+            if not info["installed"]:
+                return
+            self.selectedEngineKey = info["key"]
+            self.selectedEngineName = info["display_name"]
+            self.selectedEnginePath = info["path"]
+            self.print_to_console(f"Selected engine: {self.selectedEngineName} ({self.selectedEnginePath})")
+            dlg.close()
+
+        combo.currentIndexChanged.connect(lambda _: on_selection_changed())
+        downloadBtn.pressed.connect(do_download)
+        selectBtn.pressed.connect(do_select)
+
+        refresh_list()
+        dlg.setLayout(dlg.layout)
+        dlg.exec()
+
+    def setBot(self, color: str):
+        """Alias for :meth:`setStockfish` configuring a bot player using the currently selected engine.
 
         :param color: Player color code (``'w'`` or ``'b'``).
         :type color: str
         """
+        self.setStockfish(color)
+
+    def setStockfish(self, color: str):
+        """Open a dialog to configure bot skill level and depth for the given side.
+
+        Uses the currently selected UCI engine (or prompts to download/select one if missing).
+
+        :param color: Player color code (``'w'`` or ``'b'``).
+        :type color: str
+        """
+        if not self.selectedEnginePath:
+            self._initDefaultEngineSelection()
+
         dlg = QDialog(self)
-        dlg.setWindowTitle("Stockfish:")
+        dlg.setWindowTitle(f"Configure Bot ({self.selectedEngineName}):")
         dlg.layout = QVBoxLayout()
+
+        dlg.layout.addWidget(QLabel(f"Engine: {self.selectedEngineName}"))
 
         dlg.layout.addWidget(QLabel("Select Difficulty:"))
         diffDial = QSpinBox()
@@ -238,22 +382,24 @@ class Ui(QtWidgets.QMainWindow):
         difficulty = diffDial.value()
         moveDepth = depthDial.value()
 
+        engine_target = self.selectedEnginePath or self.selectedEngineKey
         try:
-            newEngine = uciEngine(difficulty=difficulty, moveDepth=moveDepth)
+            newEngine = uciEngine(path=engine_target, difficulty=difficulty, moveDepth=moveDepth)
         except (OSError, RuntimeError) as exc:
-            self.print_to_console(f"Failed to start Stockfish engine: {exc}")
+            self.print_to_console(f"Failed to start {self.selectedEngineName} engine: {exc}")
             return
 
+        label_prefix = self.selectedEngineName.upper()
         if color == "w":
             if getattr(self, "whiteEngine", None) is not None:
                 self.whiteEngine.close()
             self.whiteEngine = newEngine
-            self.whiteType.setText(f"STOCKFISH LVL {difficulty} DEPTH {moveDepth}")
+            self.whiteType.setText(f"{label_prefix} LVL {difficulty} DEPTH {moveDepth}")
         else:
             if getattr(self, "blackEngine", None) is not None:
                 self.blackEngine.close()
             self.blackEngine = newEngine
-            self.blackType.setText(f"STOCKFISH LVL {difficulty} DEPTH {moveDepth}")
+            self.blackType.setText(f"{label_prefix} LVL {difficulty} DEPTH {moveDepth}")
         self.setBotPaused(True)
 
     def setBotPaused(self, paused: bool):

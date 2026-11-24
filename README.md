@@ -10,9 +10,13 @@ through the standard UCI protocol.
 
 ## Features
 
-- **Play any combination of human and engine.** Each side is set to *Human* or *Stockfish*
+- **Play any combination of human and engine.** Each side is set to *Human* or *Bot*
   independently, so you can play either color, play a friend, or let two engines play each other.
-- **Adjustable engine strength.** For each Stockfish player you choose a skill level from 1 to 20
+- **Select & download UCI engines.** Use **Game > Select Engine...** to scan your system for
+  installed UCI engines (such as [Stockfish](https://stockfishchess.org/) and
+  [Plum Chess](https://github.com/jwkunz/Plum_Chess)) or download the latest release for your
+  OS and CPU architecture directly from GitHub.
+- **Adjustable engine strength.** For each bot player you choose a skill level from 1 to 20
   and a search depth from 1 to 30.
 - **Clickable board.** Click a piece to see its legal moves highlighted, then click a destination.
   Moves are animated, and a dialog offers the piece choice when a pawn promotes.
@@ -48,8 +52,10 @@ pip install PyQt6
    python src/main.py
    ```
 
-3. Choose **Game > New Game**. Use **Game > White Player...** and **Black Player...** to set each side
-   to *Is Human* or *Is Stockfish*, and **Time Control...** to set the clocks.
+3. Choose **Game > Select Engine...** to choose an installed UCI engine or download the latest
+   release of Stockfish or Plum Chess from GitHub.
+4. Choose **Game > New Game**. Use **Game > White Player...** and **Black Player...** to set each side
+   to *Is Human* or *Is Bot*, and **Time Control...** to set the clocks.
 
 The engine handshake in `uciEngine.py` works across Windows, Linux, and macOS, and automatically
 detects `stockfish` or `stockfish.exe` on your `PATH` or in the repository directory.

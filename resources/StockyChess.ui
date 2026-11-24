@@ -457,6 +457,7 @@
     <addaction name="separator"/>
     <addaction name="actionNew_Game"/>
     <addaction name="actionStart_Pause_Bot"/>
+    <addaction name="actionSelect_Engine"/>
     <addaction name="menuTime_Control"/>
     <addaction name="menuWhite_Player"/>
     <addaction name="menuBlack_Player"/>
@@ -549,7 +550,7 @@
   </action>
   <action name="actionSetWhite_Stockfish">
    <property name="text">
-    <string>Is Stockfish</string>
+    <string>Is Bot</string>
    </property>
   </action>
   <action name="actionSetBlack_Human">
@@ -562,10 +563,10 @@
   </action>
   <action name="actionSetBlack_Stockfish">
    <property name="text">
-    <string>Is Stockfish</string>
+    <string>Is Bot</string>
    </property>
    <property name="toolTip">
-    <string>Is Stockfish</string>
+    <string>Is Bot</string>
    </property>
   </action>
   <action name="actionSetWhiteTimeControlMode">
@@ -581,6 +582,11 @@
   <action name="actionStart_Pause_Bot">
    <property name="text">
     <string>Start / Pause Bot</string>
+   </property>
+  </action>
+  <action name="actionSelect_Engine">
+   <property name="text">
+    <string>Select Engine...</string>
    </property>
   </action>
  </widget>
