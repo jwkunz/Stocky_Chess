@@ -27,7 +27,7 @@ class Ui(QtWidgets.QMainWindow):
     :vartype version: str
     """
 
-    version = "1.0.1"
+    version = "1.0.2"
 
     def __init__(self):
         """Initialize the main window, board widget, signal connections, and default game state."""
@@ -45,6 +45,9 @@ class Ui(QtWidgets.QMainWindow):
 
         # Create game click handler
         self.gameClickHandler = gameClickHandler()
+
+        # Bot pause state (paused by default so CPU does not start before user is ready)
+        self.botPaused = True
 
         # Create new game state
         self.startNewGame()
@@ -71,6 +74,8 @@ class Ui(QtWidgets.QMainWindow):
         self.actionSetWhiteTimeControlMode.triggered.connect(lambda : self.setTimeControlMode("w"))   
         self.actionSetBlackTimeControlMode.triggered.connect(lambda : self.setTimeControlMode("b"))     
         self.actionImport_FEN.triggered.connect(self.setFENstate)
+        self.actionStart_Pause_Bot.triggered.connect(self.toggleBotPause)
+        self.botPauseButton.pressed.connect(self.toggleBotPause)
         self.prevMove.pressed.connect(self.setPrevMove)
         self.nextMove.pressed.connect(self.setNextMove)
 
@@ -248,6 +253,21 @@ class Ui(QtWidgets.QMainWindow):
         else:
             self.blackEngine = uciEngine(difficulty=difficulty,moveDepth=moveDepth)
             self.blackType.setText(f"STOCKFISH LVL {difficulty} DEPTH {moveDepth}")
+        self.setBotPaused(True)
+
+    def setBotPaused(self, paused : bool):
+        """Set the bot pause state and update the Start/Pause button label.
+
+        :param paused: ``True`` to pause engine play, ``False`` to allow engine play.
+        :type paused: bool
+        """
+        self.botPaused = paused
+        if hasattr(self, "botPauseButton"):
+            self.botPauseButton.setText("START BOT" if self.botPaused else "PAUSE BOT")
+
+    def toggleBotPause(self):
+        """Toggle the engine start/pause state."""
+        self.setBotPaused(not self.botPaused)
 
     # This updates the graphics and various menus
     # The updateBoard flag can be used bypass a chessBoard redraw if 
@@ -688,7 +708,7 @@ class Ui(QtWidgets.QMainWindow):
             # Nothing to do
             case "IDLE":
                 # Look if its the bots turn and game is still active
-                if self.gameClickHandler.action_state not in ("CHECKMATE", "STALEMATE", "TIMEOUT"):
+                if (not self.botPaused) and self.gameClickHandler.action_state not in ("CHECKMATE", "STALEMATE", "TIMEOUT"):
                     if((self.gameLog.getLatestGame().turn == "w") and (self.whiteEngine != None)) or ((self.gameLog.getLatestGame().turn == "b") and (self.blackEngine != None)):
                         # Simulate a None user click to run the game
                         self.boardClick(None)

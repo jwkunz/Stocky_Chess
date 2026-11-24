@@ -363,6 +363,19 @@
       <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
      </property>
     </widget>
+    <widget class="QPushButton" name="botPauseButton">
+     <property name="geometry">
+      <rect>
+       <x>600</x>
+       <y>205</y>
+       <width>120</width>
+       <height>40</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>START BOT</string>
+     </property>
+    </widget>
    </widget>
    <widget class="QGraphicsView" name="viewport">
     <property name="geometry">
@@ -443,6 +456,7 @@
     </widget>
     <addaction name="separator"/>
     <addaction name="actionNew_Game"/>
+    <addaction name="actionStart_Pause_Bot"/>
     <addaction name="menuTime_Control"/>
     <addaction name="menuWhite_Player"/>
     <addaction name="menuBlack_Player"/>
@@ -562,6 +576,11 @@
   <action name="actionSetBlackTimeControlMode">
    <property name="text">
     <string>Set Black Time</string>
+   </property>
+  </action>
+  <action name="actionStart_Pause_Bot">
+   <property name="text">
+    <string>Start / Pause Bot</string>
    </property>
   </action>
  </widget>
