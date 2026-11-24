@@ -165,6 +165,43 @@ class gameClickHandler:
 
         return legal_moves[0]
 
+    def applyEngineBestMove(
+        self,
+        bestMove: str | None,
+        cs: chessState,
+        cb: chessBoard_widget,
+        gl: gameLog,
+        mainWindow: QMainWindow,
+    ):
+        """Apply a resolved UCI move string to ``cs``, update ``gl``, and check for game end.
+
+        :param bestMove: UCI coordinate move string (e.g. ``'e2e4'``) or ``None``.
+        :type bestMove: str | None
+        :param cs: Current chess state.
+        :type cs: chessState
+        :param cb: Chess board widget to render the updated state.
+        :type cb: chessBoard_widget
+        :param gl: Game log to append the resulting position.
+        :type gl: gameLog
+        :param mainWindow: Main window instance for timer updates and move narration.
+        :type mainWindow: QMainWindow
+        """
+        if isGameOver(cs) != 0:
+            self._updateGameEndState(cs, mainWindow)
+            return
+
+        selectedMove = self._resolveEngineMove(bestMove, cs)
+        if selectedMove is None:
+            self._updateGameEndState(cs, mainWindow)
+            return
+
+        self.highlighed_moves = []
+        self.action_idx = None
+        mainWindow.movePieceWithAnimation(selectedMove, cs)
+        gl.addState(cs)
+        self._updateGameEndState(cs, mainWindow)
+        cb.renderBoard(cs)
+
     def engineHandler(
         self,
         engine: uciEngine,
@@ -191,17 +228,7 @@ class gameClickHandler:
             return
 
         bestMove = engine.request_move(cs.getFENstring())
-        selectedMove = self._resolveEngineMove(bestMove, cs)
-        if selectedMove is None:
-            self._updateGameEndState(cs, mainWindow)
-            return
-
-        self.highlighed_moves = []
-        self.action_idx = None
-        mainWindow.movePieceWithAnimation(selectedMove, cs)
-        gl.addState(cs)
-        self._updateGameEndState(cs, mainWindow)
-        cb.renderBoard(cs)
+        self.applyEngineBestMove(bestMove, cs, cb, gl, mainWindow)
 
     def clickHandler(
         self,

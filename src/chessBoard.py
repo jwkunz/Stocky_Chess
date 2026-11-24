@@ -5,6 +5,31 @@ from PyQt6.QtCore import Qt, QRect
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen
 from chessState import chessState
 from chessAdmin import convertIndex, chessMove
+from pathlib import Path
+import sys
+
+
+def get_resource_path(relative_path: str) -> str:
+    """Resolve a resource path for both normal execution and PyInstaller bundles.
+
+    :param relative_path: Path relative to the repository root (e.g. ``'resources/ChessPieces'``).
+    :type relative_path: str
+    :return: Resolved filesystem path.
+    :rtype: str
+    """
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        bundled = Path(meipass) / relative_path
+        if bundled.exists():
+            return str(bundled)
+        bundled_png = Path(meipass) / f"{relative_path}.png"
+        if bundled_png.exists():
+            return str(bundled_png)
+    repo_root = Path(__file__).resolve().parent.parent
+    candidate = repo_root / relative_path
+    if candidate.exists() or (repo_root / f"{relative_path}.png").exists():
+        return str(candidate)
+    return relative_path
 
 
 class board_color_t:
@@ -62,7 +87,7 @@ class chessBoard_widget(QtWidgets.QLabel):
         self.borderTh = borderTh
         self.white_bottom = white_bottom
         self.squareLength = (length - 2 * borderTh) // 8
-        self.spriteSheet = QImage("resources/ChessPieces")
+        self.spriteSheet = QImage(get_resource_path("resources/ChessPieces"))
 
     def _drawSquare(self, x: int, y: int, length: int, color, painter: QPainter):
         """Draw a single filled square on the board.

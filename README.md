@@ -1,78 +1,99 @@
 # Stocky Chess
 
-A desktop chess program written in Python with a PyQt6 interface. You can play against the
-[Stockfish](https://stockfishchess.org/) engine at an adjustable strength, play another person on
-the same computer, or watch Stockfish play itself, with optional chess clocks.
+A desktop chess program written in Python with a PyQt6 interface. You can play against any
+UCI-compatible chess engine (such as [Stockfish](https://stockfishchess.org/) or
+[Plum Chess](https://github.com/jwkunz/Plum_Chess)) at an adjustable strength, play another person
+on the same computer, or pit two independent, heterogeneous UCI engines against each other with
+optional chess clocks.
 
-The rules of chess, including move generation, check detection, castling, en passant, and pawn
-promotion, are implemented in this project. Stockfish is used only to choose the computer's moves,
-through the standard UCI protocol.
+The rules of chess — including move generation, check detection, castling, en passant, pawn
+promotion, the fifty-move rule, and insufficient-material draws — are implemented natively in this
+project. UCI engines are run in a non-blocking background harness to choose computer moves.
 
 ## Features
 
-- **Play any combination of human and engine.** Each side is set to *Human* or *Bot*
-  independently, so you can play either color, play a friend, or let two engines play each other.
-- **Select & download UCI engines.** Use **Game > Select Engine...** to scan your system for
-  installed UCI engines (such as [Stockfish](https://stockfishchess.org/) and
-  [Plum Chess](https://github.com/jwkunz/Plum_Chess)) or download the latest release for your
-  OS and CPU architecture directly from GitHub.
-- **Adjustable engine strength.** For each bot player you choose a skill level from 1 to 20
-  and a search depth from 1 to 30.
-- **Clickable board.** Click a piece to see its legal moves highlighted, then click a destination.
-  Moves are animated, and a dialog offers the piece choice when a pawn promotes.
+- **Heterogeneous human and bot players.** White and Black can each be set independently to
+  *Is Human* or *Is Bot*, and each bot player can be configured with its own UCI engine, skill
+  level (1–20, automatically clamped to the engine's supported range), and search depth (1–30).
+- **Engine discovery and one-click GitHub downloads.** Use **Game > Select Engine...** (or the
+  per-player bot configuration dialog) to scan your system for installed UCI engines or download
+  the latest release of **Stockfish** (`official-stockfish/Stockfish`) or **Plum Chess**
+  (`jwkunz/Plum_Chess`) for your OS and CPU architecture directly into `engines/`.
+- **Start / Pause Bot control.** Bot play starts paused after configuration so both players and
+  clocks can be set up before clicking **START BOT** (or **Game > Start / Pause Bot**).
+- **Clickable board.** Click a piece to see its legal moves highlighted, then click a destination
+  (or click the same piece again to deselect). A dialog offers the piece choice when a pawn promotes.
 - **Chess clocks.** Set the starting time (hours, minutes, seconds) and a per-move increment for each
-  player, or turn the clock off. A player who runs out of time loses.
-- **Game end detection.** Checkmate, stalemate, and loss on time are announced.
-- **Move history.** Step backward and forward through the game with the Previous and Next buttons.
-- **FEN support.** The current position is shown as a FEN string, and any position can be loaded
-  with *Import FEN*.
-- **Material count.** A panel shows the material on the board for each side.
+  player, or turn the clock off. Because engine searches run asynchronously in a background thread,
+  the GUI and chess clocks update smoothly every 100 ms during bot vs. bot games.
+- **Game end detection.** Checkmate, stalemate, fifty-move draws, insufficient-material draws, and
+  loss on time are announced.
+- **Move history & branching.** Step backward and forward through the game with the **PREVIOUS** and
+  **NEXT** buttons, and play a new move from any historical position to branch the game.
+- **FEN support.** The current position is shown as a validated FEN string, and any valid position
+  can be loaded with **Game > Import FEN**.
+- **Material count.** A panel shows the active pieces and material balance for each side.
 - **Flip the board** to put either color at the bottom.
 
-## Requirements
+## Prebuilt Binaries
+
+Prebuilt standalone executables for **Linux (`x86_64`)**, **Windows (`x86_64`)**, and
+**macOS (`arm64`)** are automatically built with PyInstaller and published on every tagged release:
+
+1. Visit the [**Releases**](https://github.com/jwkunz/Stocky_Chess/releases) tab on GitHub.
+2. Download the executable matching your operating system (`stocky_chess-linux-x86_64`,
+   `stocky_chess-windows-x86_64.exe`, or `stocky_chess-macos-arm64`).
+3. On Linux or macOS, mark the binary as executable (`chmod +x stocky_chess-*`) and run it.
+
+## Requirements (Running from Source)
 
 - Python 3.10 or newer
-- [PyQt6](https://pypi.org/project/PyQt6/)
-- A Stockfish executable, only needed to play against the engine. It is not included in this
-  repository.
+- Dependencies listed in `requirements.txt` (`PyQt6`, `pytest`, `sphinx`, `sphinx-rtd-theme`)
 
 ```sh
-pip install PyQt6
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
 ## Running
 
-1. Download Stockfish from [stockfishchess.org](https://stockfishchess.org/download/) and place the
-   executable in the repository folder as `stockfish.exe`. The engine path is set in
-   `src/uciEngine.py`.
-2. Run the program from the repository's top-level folder, so that it can find the `resources`
-   folder:
+1. Run the program from the repository's top-level folder so that it can find the `resources`
+   and `engines` folders:
 
    ```sh
-   python src/main.py
+   .venv/bin/python src/main.py
    ```
 
-3. Choose **Game > Select Engine...** to choose an installed UCI engine or download the latest
-   release of Stockfish or Plum Chess from GitHub.
-4. Choose **Game > New Game**. Use **Game > White Player...** and **Black Player...** to set each side
-   to *Is Human* or *Is Bot*, and **Time Control...** to set the clocks.
+2. Optional: Open **Game > Select Engine...** to scan your system for UCI engines or click
+   **Download Latest Release** to fetch Stockfish or Plum Chess from GitHub into `engines/`.
+3. Use **Game > White Player...** and **Black Player...** to set each side to *Is Human* or *Is Bot*
+   (selecting the engine, skill level, and search depth independently for each bot), configure
+   clocks via **Time Control...**, and click **START BOT** when ready.
 
-The engine handshake in `uciEngine.py` works across Windows, Linux, and macOS, and automatically
-detects `stockfish` or `stockfish.exe` on your `PATH` or in the repository directory.
+## Testing
+
+Run the `pytest` suite from the repository root:
+
+```sh
+.venv/bin/pytest
+```
 
 ## Project layout
 
 | File | Purpose |
 |---|---|
-| `src/main.py` | The main window, menus, dialogs, clocks, and the game loop |
-| `src/chessState.py` | The board state, with FEN reading and writing |
-| `src/chessAdmin.py` | Move generation for every piece, check filtering, castling, en passant, promotion, and checkmate and stalemate detection |
-| `src/chessBoard.py` | The board widget that draws squares, pieces, and highlighted moves |
-| `src/gameClickHandler.py` | Turns clicks and engine replies into moves |
-| `src/gameLog.py` | The history of positions used for stepping through a game |
-| `src/uciEngine.py` | Starts Stockfish and talks to it over UCI, setting skill level and search depth |
-| `src/stockfishTerminalPlay.py` | A terminal-based way to play against Stockfish |
-| `resources/` | The Qt Designer interface file and the chess piece images |
+| `src/main.py` | The main window, menus, dialogs, clocks, and non-blocking event/engine loop |
+| `src/chessState.py` | Board state representation with validated FEN reading and writing |
+| `src/chessAdmin.py` | Move generation, attack detection, castling, en passant, promotion, and game-over/draw detection |
+| `src/chessBoard.py` | The board widget that draws squares, pieces, coordinates, and highlighted moves |
+| `src/gameClickHandler.py` | State machine turning human clicks and engine replies into moves |
+| `src/gameLog.py` | History of board positions for stepping through and branching a game |
+| `src/uciEngine.py` | Cross-platform UCI engine discovery, GitHub downloader, option parser, and threaded search harness |
+| `src/stockfishTerminalPlay.py` | Standalone terminal interface for playing against a UCI engine |
+| `resources/` | Qt Designer interface file (`StockyChess.ui`) and chess piece sprite sheet (`ChessPieces.png`) |
+| `tests/` | Unit and integration test suite (`pytest`) |
+| `docs/` | Sphinx API documentation sources |
 
 ## Documentation
 
@@ -83,7 +104,6 @@ API documentation generated with Sphinx is hosted on GitHub Pages at
 
 - Draws by threefold repetition are not detected.
 - The *Export PGN* menu item is present but not implemented.
-- Stockfish must be installed separately.
 
 ## License
 

@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
 )
 from PyQt6.QtCore import QTimer
-from chessBoard import chessBoard_widget
+from chessBoard import chessBoard_widget, get_resource_path
 from chessState import player_t, chessState
 from gameClickHandler import gameClickHandler
 from gameLog import gameLog
@@ -25,6 +25,7 @@ from chessAdmin import (
     getPieceTextNameOn,
     getPiecetoTextName,
     hasKingCollision,
+    isGameOver,
 )
 from uciEngine import (
     uciEngine,
@@ -34,7 +35,6 @@ from uciEngine import (
     resolve_stockfish_path,
 )
 import sys
-import time
 
 loopTimeMS = 100
 
@@ -43,19 +43,20 @@ class Ui(QtWidgets.QMainWindow):
     """Main window controller for the Stocky Chess desktop application.
 
     Loads the Qt Designer UI from ``resources/StockyChess.ui``, initializes the
-    board widget, manages player types (Human or Stockfish), runs the chess clocks,
-    and coordinates user and engine moves.
+    board widget, manages independent player types and heterogeneous UCI engines
+    for White and Black, runs the chess clocks, and coordinates user and asynchronous
+    engine moves.
 
     :cvar version: Application version string.
     :vartype version: str
     """
 
-    version = "2.1.0"
+    version = "2.2.0"
 
     def __init__(self):
         """Initialize the main window, board widget, signal connections, and default game state."""
         super(Ui, self).__init__()
-        uic.loadUi("resources/StockyChess.ui", self)
+        uic.loadUi(get_resource_path("resources/StockyChess.ui"), self)
 
         board_len = self.viewport.width()
         S = QtWidgets.QGraphicsScene(0, 0, board_len, board_len)
@@ -72,12 +73,24 @@ class Ui(QtWidgets.QMainWindow):
 
         self.whiteEngine: uciEngine | None = None
         self.blackEngine: uciEngine | None = None
+
+        # Independent engine selections for White and Black
+        self.whiteEngineKey: str = "stockfish"
+        self.whiteEngineName: str = "Stockfish"
+        self.whiteEnginePath: str | None = None
+
+        self.blackEngineKey: str = "stockfish"
+        self.blackEngineName: str = "Stockfish"
+        self.blackEnginePath: str | None = None
+
         self.selectedEngineKey: str = "stockfish"
         self.selectedEngineName: str = "Stockfish"
         self.selectedEnginePath: str | None = None
         self._initDefaultEngineSelection()
+
         self.botPaused: bool = True
         self._in_board_click: bool = False
+        self._active_search_engine: uciEngine | None = None
 
         self.startNewGame()
 
@@ -93,8 +106,8 @@ class Ui(QtWidgets.QMainWindow):
         self.actionNew_Game.triggered.connect(self.startNewGame)
         self.actionSetWhite_Human.triggered.connect(lambda: self.setHuman("w"))
         self.actionSetBlack_Human.triggered.connect(lambda: self.setHuman("b"))
-        self.actionSetWhite_Stockfish.triggered.connect(lambda: self.setStockfish("w"))
-        self.actionSetBlack_Stockfish.triggered.connect(lambda: self.setStockfish("b"))
+        self.actionSetWhite_Stockfish.triggered.connect(lambda: self.setBot("w"))
+        self.actionSetBlack_Stockfish.triggered.connect(lambda: self.setBot("b"))
         self.actionSetWhiteTimeControlMode.triggered.connect(lambda: self.setTimeControlMode("w"))
         self.actionSetBlackTimeControlMode.triggered.connect(lambda: self.setTimeControlMode("b"))
         self.actionImport_FEN.triggered.connect(self.setFENstate)
@@ -208,38 +221,63 @@ class Ui(QtWidgets.QMainWindow):
         """
         if color == "w":
             if getattr(self, "whiteEngine", None) is not None:
+                if self._active_search_engine is self.whiteEngine:
+                    self._active_search_engine = None
+                    self.timerState = "IDLE"
                 self.whiteEngine.close()
             self.whiteEngine = None
             self.whiteType.setText("HUMAN")
         else:
             if getattr(self, "blackEngine", None) is not None:
+                if self._active_search_engine is self.blackEngine:
+                    self._active_search_engine = None
+                    self.timerState = "IDLE"
                 self.blackEngine.close()
             self.blackEngine = None
             self.blackType.setText("HUMAN")
 
     def _initDefaultEngineSelection(self):
-        """Initialize the active engine selection from installed engines on the system."""
+        """Initialize the default engine selections for White and Black from installed engines."""
         discovered = discover_engines()
-        for info in discovered:
-            if info["installed"]:
-                self.selectedEngineKey = info["key"]
-                self.selectedEngineName = info["display_name"]
-                self.selectedEnginePath = info["path"]
-                return
-        if discovered:
-            self.selectedEngineKey = discovered[0]["key"]
-            self.selectedEngineName = discovered[0]["display_name"]
-            self.selectedEnginePath = discovered[0]["path"]
+        default_info = next((info for info in discovered if info["installed"]), None)
+        if default_info is None and discovered:
+            default_info = discovered[0]
+        if default_info is not None:
+            for prefix in ("selected", "white", "black"):
+                setattr(self, f"{prefix}EngineKey", default_info["key"])
+                setattr(self, f"{prefix}EngineName", default_info["display_name"])
+                setattr(self, f"{prefix}EnginePath", default_info["path"])
+
+    def _applyEngineChoice(self, target: str, info: dict):
+        """Apply a discovered engine dictionary to ``'w'``, ``'b'``, or ``'both'``."""
+        self.selectedEngineKey = info["key"]
+        self.selectedEngineName = info["display_name"]
+        self.selectedEnginePath = info["path"]
+        if target in ("w", "both"):
+            self.whiteEngineKey = info["key"]
+            self.whiteEngineName = info["display_name"]
+            self.whiteEnginePath = info["path"]
+        if target in ("b", "both"):
+            self.blackEngineKey = info["key"]
+            self.blackEngineName = info["display_name"]
+            self.blackEnginePath = info["path"]
 
     def selectEngineDialog(self):
-        """Open a dialog to inspect discovered UCI engines, download missing ones, and select the active engine."""
+        """Open a dialog to inspect discovered UCI engines, download missing ones, and assign engines to White, Black, or both."""
         dlg = QDialog(self)
-        dlg.setWindowTitle("Select UCI Engine")
+        dlg.setWindowTitle("Select & Download UCI Engines")
         dlg.layout = QVBoxLayout()
 
         dlg.layout.addWidget(QLabel("Available & Supported UCI Engines:"))
         combo = QComboBox()
         dlg.layout.addWidget(combo)
+
+        dlg.layout.addWidget(QLabel("Assign Selected Engine To:"))
+        targetCombo = QComboBox()
+        targetCombo.addItem("Both Players (Default)", "both")
+        targetCombo.addItem("White Bot Only", "w")
+        targetCombo.addItem("Black Bot Only", "b")
+        dlg.layout.addWidget(targetCombo)
 
         statusLabel = QLabel("")
         dlg.layout.addWidget(statusLabel)
@@ -283,7 +321,9 @@ class Ui(QtWidgets.QMainWindow):
                 statusLabel.setText(f"Installed at: {info['path']}")
                 selectBtn.setEnabled(True)
                 downloadBtn.setEnabled(bool(info["downloadable"]))
-                downloadBtn.setText("Re-download Latest" if info["downloadable"] else "Download Unavailable")
+                downloadBtn.setText(
+                    "Re-download Latest" if info["downloadable"] else "Download Unavailable"
+                )
             else:
                 if info["downloadable"]:
                     statusLabel.setText(
@@ -319,10 +359,14 @@ class Ui(QtWidgets.QMainWindow):
             info = engine_records[idx]
             if not info["installed"]:
                 return
-            self.selectedEngineKey = info["key"]
-            self.selectedEngineName = info["display_name"]
-            self.selectedEnginePath = info["path"]
-            self.print_to_console(f"Selected engine: {self.selectedEngineName} ({self.selectedEnginePath})")
+            target_side = targetCombo.currentData()
+            self._applyEngineChoice(target_side, info)
+            side_label = {"w": "White", "b": "Black", "both": "White & Black"}.get(
+                target_side, "White & Black"
+            )
+            self.print_to_console(
+                f"Selected engine for {side_label}: {info['display_name']} ({info['path']})"
+            )
             dlg.close()
 
         combo.currentIndexChanged.connect(lambda _: on_selection_changed())
@@ -334,7 +378,7 @@ class Ui(QtWidgets.QMainWindow):
         dlg.exec()
 
     def setBot(self, color: str):
-        """Alias for :meth:`setStockfish` configuring a bot player using the currently selected engine.
+        """Configure a bot player for ``color`` with its own independent engine, difficulty, and search depth.
 
         :param color: Player color code (``'w'`` or ``'b'``).
         :type color: str
@@ -342,64 +386,146 @@ class Ui(QtWidgets.QMainWindow):
         self.setStockfish(color)
 
     def setStockfish(self, color: str):
-        """Open a dialog to configure bot skill level and depth for the given side.
+        """Open a dialog to configure the bot's UCI engine, skill level, and search depth for ``color``.
 
-        Uses the currently selected UCI engine (or prompts to download/select one if missing).
+        Allows White and Black to run completely independent, heterogeneous UCI engines.
 
         :param color: Player color code (``'w'`` or ``'b'``).
         :type color: str
         """
-        if not self.selectedEnginePath:
-            self._initDefaultEngineSelection()
+        side_title = "White" if color == "w" else "Black"
+        current_key = self.whiteEngineKey if color == "w" else self.blackEngineKey
 
         dlg = QDialog(self)
-        dlg.setWindowTitle(f"Configure Bot ({self.selectedEngineName}):")
+        dlg.setWindowTitle(f"Configure {side_title} Bot:")
         dlg.layout = QVBoxLayout()
 
-        dlg.layout.addWidget(QLabel(f"Engine: {self.selectedEngineName}"))
+        dlg.layout.addWidget(QLabel(f"Select UCI Engine for {side_title}:"))
+        engineCombo = QComboBox()
+        dlg.layout.addWidget(engineCombo)
 
-        dlg.layout.addWidget(QLabel("Select Difficulty:"))
+        engineStatus = QLabel("")
+        dlg.layout.addWidget(engineStatus)
+
+        downloadBtn = QPushButton("Download Latest Release")
+        dlg.layout.addWidget(downloadBtn)
+
+        dlg.layout.addWidget(QLabel("Select Difficulty (1-20):"))
         diffDial = QSpinBox()
         diffDial.setMaximum(20)
         diffDial.setMinimum(1)
         diffDial.setValue(10)
         dlg.layout.addWidget(diffDial)
 
-        dlg.layout.addWidget(QLabel("Select Search Depth:"))
+        dlg.layout.addWidget(QLabel("Select Search Depth (1-30):"))
         depthDial = QSpinBox()
         depthDial.setMaximum(30)
         depthDial.setMinimum(1)
-        depthDial.setValue(20)
+        depthDial.setValue(6)
         dlg.layout.addWidget(depthDial)
 
         button = QPushButton("Accept")
         dlg.layout.addWidget(button)
-        button.pressed.connect(lambda: dlg.close())
 
+        engine_records: list[dict] = []
+        accepted = False
+
+        def refresh_engines(preferred_key: str | None = None):
+            nonlocal engine_records
+            target = preferred_key or current_key
+            engine_records = discover_engines()
+            engineCombo.blockSignals(True)
+            engineCombo.clear()
+            sel_idx = 0
+            for idx, info in enumerate(engine_records):
+                status_str = "Installed" if info["installed"] else (
+                    "Download Available" if info["downloadable"] else "Not Found"
+                )
+                engineCombo.addItem(f"{info['display_name']} ({status_str})", info["key"])
+                if info["key"] == target:
+                    sel_idx = idx
+            engineCombo.setCurrentIndex(sel_idx)
+            engineCombo.blockSignals(False)
+            on_engine_changed()
+
+        def on_engine_changed():
+            idx = engineCombo.currentIndex()
+            if idx < 0 or idx >= len(engine_records):
+                return
+            info = engine_records[idx]
+            if info["installed"]:
+                engineStatus.setText(f"Using: {info['path']}")
+                downloadBtn.setVisible(False)
+                button.setEnabled(True)
+            elif info["downloadable"]:
+                engineStatus.setText(f"{info['display_name']} not installed. Click Download below.")
+                downloadBtn.setVisible(True)
+                downloadBtn.setEnabled(True)
+                button.setEnabled(False)
+            else:
+                engineStatus.setText(f"{info['display_name']} not found on system PATH.")
+                downloadBtn.setVisible(False)
+                button.setEnabled(False)
+
+        def on_download():
+            idx = engineCombo.currentIndex()
+            if idx < 0 or idx >= len(engine_records):
+                return
+            info = engine_records[idx]
+            engineStatus.setText(f"Downloading {info['display_name']}...")
+            dlg.repaint()
+            try:
+                installed_path = download_engine(info["key"])
+                self.print_to_console(f"Downloaded {info['display_name']} to {installed_path}")
+                refresh_engines(preferred_key=info["key"])
+            except Exception as exc:
+                engineStatus.setText(f"Download failed: {exc}")
+                self.print_to_console(f"Failed to download {info['display_name']}: {exc}")
+
+        def on_accept():
+            nonlocal accepted
+            accepted = True
+            dlg.close()
+
+        engineCombo.currentIndexChanged.connect(lambda _: on_engine_changed())
+        downloadBtn.pressed.connect(on_download)
+        button.pressed.connect(on_accept)
+
+        refresh_engines()
         dlg.setLayout(dlg.layout)
         dlg.exec()
 
+        if not accepted:
+            return
+
+        idx = engineCombo.currentIndex()
+        if idx < 0 or idx >= len(engine_records):
+            return
+        chosen_info = engine_records[idx]
+        self._applyEngineChoice(color, chosen_info)
+
         difficulty = diffDial.value()
         moveDepth = depthDial.value()
+        engine_target = chosen_info["path"] or chosen_info["key"]
+        engine_display = chosen_info["display_name"]
 
-        engine_target = self.selectedEnginePath or self.selectedEngineKey
         try:
             newEngine = uciEngine(path=engine_target, difficulty=difficulty, moveDepth=moveDepth)
         except (OSError, RuntimeError) as exc:
-            self.print_to_console(f"Failed to start {self.selectedEngineName} engine: {exc}")
+            self.print_to_console(f"Failed to start {engine_display} engine: {exc}")
             return
 
-        label_prefix = self.selectedEngineName.upper()
+        label_prefix = engine_display.upper()
         if color == "w":
             if getattr(self, "whiteEngine", None) is not None:
                 self.whiteEngine.close()
             self.whiteEngine = newEngine
-            self.whiteType.setText(f"{label_prefix} LVL {difficulty} DEPTH {moveDepth}")
+            self.whiteType.setText(f"{label_prefix} LVL {newEngine.difficulty} DEPTH {moveDepth}")
         else:
             if getattr(self, "blackEngine", None) is not None:
                 self.blackEngine.close()
             self.blackEngine = newEngine
-            self.blackType.setText(f"{label_prefix} LVL {difficulty} DEPTH {moveDepth}")
+            self.blackType.setText(f"{label_prefix} LVL {newEngine.difficulty} DEPTH {moveDepth}")
         self.setBotPaused(True)
 
     def setBotPaused(self, paused: bool):
@@ -417,7 +543,7 @@ class Ui(QtWidgets.QMainWindow):
         self.setBotPaused(not self.botPaused)
 
     def closeEvent(self, event):
-        """Cleanly shut down any active Stockfish subprocesses when the window closes."""
+        """Cleanly shut down any active UCI engine subprocesses when the window closes."""
         if getattr(self, "whiteEngine", None) is not None:
             self.whiteEngine.close()
         if getattr(self, "blackEngine", None) is not None:
@@ -447,6 +573,7 @@ class Ui(QtWidgets.QMainWindow):
         self.gameClickHandler.setWhosTurn(player_t.WHITE)
         self.timerState = "IDLE"
         self._in_board_click = False
+        self._active_search_engine = None
         self.timeControlState = "IDLE"
         self.whiteMS = 100 * 60 * 60 * 1000 - 1
         self.blackMS = 100 * 60 * 60 * 1000 - 1
@@ -551,6 +678,20 @@ class Ui(QtWidgets.QMainWindow):
             self.writeMS(self.blackMS, "b")
             self.timeControlState = "WHITE_DEC"
 
+    def _checkAndAnnounceGameOver(self) -> bool:
+        """If the game has reached CHECKMATE or STALEMATE, stop timers, show dialog, and return True."""
+        if self.gameClickHandler.action_state == "CHECKMATE":
+            self.timeControlState = "IDLE"
+            self.timerState = "GAME_OVER"
+            self.checkmateCallback()
+            return True
+        if self.gameClickHandler.action_state == "STALEMATE":
+            self.timeControlState = "IDLE"
+            self.timerState = "GAME_OVER"
+            self.stalemateCallback()
+            return True
+        return False
+
     def boardClick(self, event):
         """Handle a mouse release event on the board scene or trigger an engine move when ``event`` is ``None``.
 
@@ -560,7 +701,7 @@ class Ui(QtWidgets.QMainWindow):
         :param event: QGraphicsSceneMouseEvent for human clicks, or ``None`` for engine turns.
         :type event: QtWidgets.QGraphicsSceneMouseEvent | None
         """
-        if self._in_board_click:
+        if self._in_board_click or self.timerState == "ENGINE_RUNNING":
             return
         if self.gameClickHandler.action_state in ("CHECKMATE", "STALEMATE", "TIMEOUT"):
             return
@@ -581,32 +722,16 @@ class Ui(QtWidgets.QMainWindow):
                     self,
                 )
             else:
-                self.timerState = "ENGINE_RUNNING"
-                t0 = time.monotonic()
                 self.gameClickHandler.clickHandler(
                     None, None, tempGame, self.chessBoardWidget, tempLog, self
                 )
-                elapsed_ms = int((time.monotonic() - t0) * 1000)
-                if self.timeControlState == "BLACK_DEC" and self.whiteTimeDecMS > 0:
-                    self.whiteMS = max(0, self.whiteMS - elapsed_ms)
-                elif self.timeControlState == "WHITE_DEC" and self.blackTimeDecMS > 0:
-                    self.blackMS = max(0, self.blackMS - elapsed_ms)
 
             if len(tempLog.log) > self.gameRenderIndex + 1:
                 self.gameLog = tempLog
                 self.gameRenderIndex = self.gameLog.getCurrentIndex()
 
             self.render(False)
-
-            if self.gameClickHandler.action_state == "CHECKMATE":
-                self.timeControlState = "IDLE"
-                self.timerState = "GAME_OVER"
-                self.checkmateCallback()
-                return
-            if self.gameClickHandler.action_state == "STALEMATE":
-                self.timeControlState = "IDLE"
-                self.timerState = "GAME_OVER"
-                self.stalemateCallback()
+            if self._checkAndAnnounceGameOver():
                 return
 
             self.timerState = "DRAW_WAIT"
@@ -639,6 +764,7 @@ class Ui(QtWidgets.QMainWindow):
         """
         self.gameClickHandler.action_state = "TIMEOUT"
         self.timerState = "GAME_OVER"
+        self._active_search_engine = None
         dlg = QDialog(self)
         dlg.setWindowTitle(" ")
         dlg.layout = QVBoxLayout()
@@ -718,6 +844,8 @@ class Ui(QtWidgets.QMainWindow):
 
     def setPrevMove(self):
         """Step backward one ply in the move history log and re-render the board."""
+        if self.timerState == "ENGINE_RUNNING":
+            return
         if self.gameRenderIndex <= 0:
             self.gameRenderIndex = 0
             return
@@ -730,6 +858,8 @@ class Ui(QtWidgets.QMainWindow):
 
     def setNextMove(self):
         """Step forward one ply in the move history log and re-render the board."""
+        if self.timerState == "ENGINE_RUNNING":
+            return
         if self.gameRenderIndex >= self.gameLog.getCurrentIndex():
             self.gameRenderIndex = self.gameLog.getCurrentIndex()
             return
@@ -759,6 +889,42 @@ class Ui(QtWidgets.QMainWindow):
         else:
             self.blackTime.setText(line)
 
+    def _startAsyncEngineTurn(self, engine: uciEngine, active_state: chessState):
+        """Launch a non-blocking background search on ``engine`` for ``active_state``."""
+        if isGameOver(active_state) != 0:
+            self.gameClickHandler._updateGameEndState(active_state, self)
+            self._checkAndAnnounceGameOver()
+            return
+        self._active_search_engine = engine
+        self.timerState = "ENGINE_RUNNING"
+        engine.start_search(active_state.getFENstring())
+
+    def _pollAsyncEngineTurn(self):
+        """Check if the active background engine search has produced a move and apply it."""
+        if self._active_search_engine is None:
+            self.timerState = "IDLE"
+            return
+        done, best_move = self._active_search_engine.poll_move()
+        if not done:
+            return
+        self._active_search_engine = None
+
+        tempLog = gameLog()
+        tempLog.log = [state.copy() for state in self.gameLog.log[: self.gameRenderIndex + 1]]
+        tempGame = tempLog.currentGame().copy()
+
+        self.gameClickHandler.applyEngineBestMove(
+            best_move, tempGame, self.chessBoardWidget, tempLog, self
+        )
+        if len(tempLog.log) > self.gameRenderIndex + 1:
+            self.gameLog = tempLog
+            self.gameRenderIndex = self.gameLog.getCurrentIndex()
+
+        self.render(False)
+        if self._checkAndAnnounceGameOver():
+            return
+        self.timerState = "DRAW_WAIT"
+
     def timerCallback(self):
         """Periodic timer callback invoked every ``loopTimeMS`` ms to drive bot turns and clocks."""
         if self._in_board_click:
@@ -773,12 +939,12 @@ class Ui(QtWidgets.QMainWindow):
                     "TIMEOUT",
                 ):
                     active = self.gameLog.getGameByIndex(self.gameRenderIndex)
-                    if (active.turn == "w" and self.whiteEngine is not None) or (
-                        active.turn == "b" and self.blackEngine is not None
-                    ):
-                        self.boardClick(None)
+                    if active.turn == "w" and self.whiteEngine is not None:
+                        self._startAsyncEngineTurn(self.whiteEngine, active)
+                    elif active.turn == "b" and self.blackEngine is not None:
+                        self._startAsyncEngineTurn(self.blackEngine, active)
             case "ENGINE_RUNNING":
-                pass
+                self._pollAsyncEngineTurn()
             case "DRAW_WAIT":
                 self.timerState = "IDLE"
             case _:

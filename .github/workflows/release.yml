@@ -1,0 +1,94 @@
+name: Build and Release Executables
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform_name: linux-x86_64
+            asset_name: stocky_chess-linux-x86_64
+            sep: ":"
+          - os: windows-latest
+            platform_name: windows-x86_64
+            asset_name: stocky_chess-windows-x86_64.exe
+            sep: ";"
+          - os: macos-latest
+            platform_name: macos-arm64
+            asset_name: stocky_chess-macos-arm64
+            sep: ":"
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build executable with PyInstaller
+        shell: bash
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed \
+            --name "${{ matrix.asset_name }}" \
+            --paths src \
+            --add-data "resources${{ matrix.sep }}resources" \
+            src/main.py
+
+      - name: Prepare release asset
+        shell: bash
+        run: |
+          mkdir -p release_assets
+          if [ -f "dist/${{ matrix.asset_name }}" ]; then
+            cp "dist/${{ matrix.asset_name }}" "release_assets/${{ matrix.asset_name }}"
+          elif [ -f "dist/${{ matrix.asset_name }}.exe" ]; then
+            cp "dist/${{ matrix.asset_name }}.exe" "release_assets/${{ matrix.asset_name }}"
+          fi
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: release_assets/${{ matrix.asset_name }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release and upload binaries
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="${GITHUB_REF#refs/tags/}"
+          gh release create "$TAG_NAME" artifacts/* \
+            --title "Stocky Chess $TAG_NAME" \
+            --generate-notes

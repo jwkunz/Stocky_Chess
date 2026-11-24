@@ -3,11 +3,14 @@
 import json
 import os
 import platform
+import queue
 import shutil
 import stat
 import subprocess
 import tarfile
 import tempfile
+import threading
+import time
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -95,11 +98,10 @@ KNOWN_ENGINES: tuple[EngineSpec, ...] = (
 def get_engines_dir() -> Path:
     """Return the local directory where downloaded engines are stored.
 
-    :return: Path to the ``engines/`` directory inside the project or user home.
+    :return: Path to the ``engines/`` directory inside the project.
     :rtype: Path
     """
-    repo_engines = Path("engines")
-    return repo_engines
+    return Path("engines")
 
 
 def _common_search_dirs() -> list[Path]:
@@ -149,12 +151,13 @@ def find_engine_binary(spec: EngineSpec, extra_dirs: list[Path] | None = None) -
             candidate = d / name
             if candidate.is_file() and os.access(candidate, os.X_OK):
                 return str(candidate.resolve())
-        # Also check any matching prefix files in the engines directory (e.g. plum_chess-v7.16.0-linux-x86_64)
         try:
             for child in sorted(d.iterdir(), reverse=True):
                 if child.is_file() and os.access(child, os.X_OK):
                     lower_name = child.name.lower()
-                    if lower_name.startswith(spec.key.lower()) and not lower_name.endswith((".zip", ".tar.gz", ".tgz", ".py")):
+                    if lower_name.startswith(spec.key.lower()) and not lower_name.endswith(
+                        (".zip", ".tar.gz", ".tgz", ".py")
+                    ):
                         return str(child.resolve())
         except OSError:
             pass
@@ -173,7 +176,7 @@ def discover_engines(extra_dirs: list[Path] | None = None) -> list[dict]:
     :param extra_dirs: Optional additional directories to search.
     :type extra_dirs: list[Path] | None
     :return: List of dictionaries with keys ``key``, ``display_name``, ``path``,
-        ``installed``, and ``downloadable``.
+        ``installed``, ``downloadable``, and ``github_repo``.
     :rtype: list[dict]
     """
     results: list[dict] = []
@@ -420,35 +423,85 @@ def resolve_stockfish_path(path: str | None = None) -> str:
     return path if path else ("stockfish.exe" if os.name == "nt" else "stockfish")
 
 
+def parse_uci_option_line(line: str) -> tuple[str, dict] | None:
+    """Parse a UCI ``option name ... type ...`` line into ``(option_name, metadata)``.
+
+    :param line: Decoded text line emitted by an engine during the ``uci`` handshake.
+    :type line: str
+    :return: Tuple ``(name, info_dict)`` or ``None`` if not an option line.
+    :rtype: tuple[str, dict] | None
+    """
+    stripped = line.strip()
+    if not stripped.startswith("option name "):
+        return None
+    tokens = stripped.split()
+    if "type" not in tokens:
+        return None
+    type_idx = tokens.index("type")
+    opt_name = " ".join(tokens[2:type_idx])
+    opt_type = tokens[type_idx + 1] if type_idx + 1 < len(tokens) else "string"
+    info: dict[str, str | int | None] = {"type": opt_type, "min": None, "max": None}
+    for i in range(type_idx + 2, len(tokens) - 1):
+        if tokens[i] == "min":
+            try:
+                info["min"] = int(tokens[i + 1])
+            except ValueError:
+                pass
+        elif tokens[i] == "max":
+            try:
+                info["max"] = int(tokens[i + 1])
+            except ValueError:
+                pass
+    return (opt_name, info)
+
+
 class uciEngine:
-    """Manages a UCI chess engine subprocess via the Universal Chess Interface protocol.
+    """Manages a UCI chess engine subprocess with a non-blocking search harness.
+
+    Parses advertised UCI options during handshake so only supported options are sent
+    with properly clamped values (e.g. ``Skill Level`` max 10 for Plum Chess vs 20 for Stockfish),
+    and supports both synchronous :meth:`request_move` and asynchronous
+    :meth:`start_search` / :meth:`poll_move` for non-blocking GUI play.
 
     :ivar stockfish_process: The underlying engine Popen process.
     :vartype stockfish_process: subprocess.Popen | None
     :ivar current_state: Current state in the UCI handshake/search state machine.
     :vartype current_state: str
-    :ivar difficulty: Configured engine Skill Level (0-20).
+    :ivar difficulty: Configured engine Skill Level.
     :vartype difficulty: int
-    :ivar depth: Search depth passed to ``go depth``.
+    :ivar depth: Search depth passed to ``go``.
     :vartype depth: int
-    :ivar inputFEN: Last FEN position requested for engine evaluation.
-    :vartype inputFEN: str
+    :ivar movetime_ms: Per-move time cap in milliseconds passed to ``go``.
+    :vartype movetime_ms: int
     :ivar engine_path: Resolved path to the engine binary.
     :vartype engine_path: str
+    :ivar engine_name: Engine name reported via ``id name`` or derived from binary.
+    :vartype engine_name: str
+    :ivar supported_options: Advertised UCI options parsed during initialization.
+    :vartype supported_options: dict[str, dict]
     """
 
-    def __init__(self, path: str | None = None, difficulty: int = 20, moveDepth: int = 20):
+    def __init__(
+        self,
+        path: str | None = None,
+        difficulty: int = 10,
+        moveDepth: int = 10,
+        movetime_ms: int = 1500,
+    ):
         """Launch a UCI engine and run the UCI initialization state machine until ready.
 
-        :param path: Path to the UCI engine executable. Defaults to auto-detecting
-            installed engines on PATH or in the ``engines/`` directory.
+        :param path: Path or key for the UCI engine executable.
         :type path: str | None
-        :param difficulty: Engine Skill Level (0 to 20).
+        :param difficulty: Requested Skill Level (automatically clamped to engine's min/max).
         :type difficulty: int
         :param moveDepth: Search depth in plies.
         :type moveDepth: int
+        :param movetime_ms: Maximum search time per move in milliseconds.
+        :type movetime_ms: int
         """
         self.engine_path = resolve_stockfish_path(path)
+        self.engine_name = Path(self.engine_path).stem.replace("_", " ").title()
+        self.supported_options: dict[str, dict] = {}
         self.stockfish_process = subprocess.Popen(
             [self.engine_path],
             stdin=subprocess.PIPE,
@@ -458,14 +511,31 @@ class uciEngine:
         self.current_state = "START_UCI"
         self.difficulty = max(0, min(20, int(difficulty)))
         self.depth = max(1, int(moveDepth))
+        self.movetime_ms = max(100, int(movetime_ms))
         self.inputFEN = ""
         self.cpu_white = False
+        self._async_thread: threading.Thread | None = None
+        self._async_queue: queue.Queue[str | None] = queue.Queue()
+        self._lock = threading.Lock()
 
         while self.current_state not in ("WAITING", "DONE"):
             self.tick()
         if self.current_state == "DONE":
             self.close()
             raise RuntimeError("UCI engine process exited unexpectedly during initialization.")
+
+    def _clamp_option(self, name: str, value: int) -> int:
+        """Clamp an integer spin option value to the engine's advertised ``[min, max]`` range."""
+        opt = self.supported_options.get(name)
+        if not opt:
+            return value
+        lo = opt.get("min")
+        hi = opt.get("max")
+        if lo is not None:
+            value = max(int(lo), value)
+        if hi is not None:
+            value = min(int(hi), value)
+        return value
 
     def close(self):
         """Cleanly terminate the underlying UCI engine subprocess."""
@@ -484,25 +554,69 @@ class uciEngine:
             self.stockfish_process = None
 
     def request_move(self, fen: str) -> str | None:
-        """Request the best move from the UCI engine for the given FEN position.
-
-        Advances the UCI state machine safely until ``bestmove`` is returned or
-        the engine stream closes.
+        """Synchronously request the best move from the UCI engine for ``fen``.
 
         :param fen: FEN string representing the position to search.
         :type fen: str
         :return: UCI coordinate move string (e.g. ``'e2e4'``), or ``None`` if no move.
         :rtype: str | None
         """
-        self.current_state = "WAITING"
-        args: dict[str, str | None] = {"inputFEN": fen}
-        self.tick(args)
-        while self.current_state not in ("WAITING", "DONE"):
+        with self._lock:
+            if self.stockfish_process is None or self.stockfish_process.poll() is not None:
+                return None
+            self.current_state = "WAITING"
+            args: dict[str, str | None] = {"inputFEN": fen}
             self.tick(args)
-        best_move = args.get("bestMove")
-        if not best_move or best_move == "(none)":
-            return None
-        return best_move
+            while self.current_state not in ("WAITING", "DONE"):
+                self.tick(args)
+            best_move = args.get("bestMove")
+            if not best_move or best_move == "(none)":
+                return None
+            return best_move
+
+    def start_search(self, fen: str):
+        """Start an asynchronous move search in a background worker thread.
+
+        Use :meth:`poll_move` to check whether the search has completed without
+        blocking the GUI event loop.
+
+        :param fen: FEN string representing the position to search.
+        :type fen: str
+        """
+        if self.is_searching():
+            return
+        while not self._async_queue.empty():
+            try:
+                self._async_queue.get_nowait()
+            except queue.Empty:
+                break
+
+        def _worker():
+            move = self.request_move(fen)
+            self._async_queue.put(move)
+
+        self._async_thread = threading.Thread(target=_worker, daemon=True)
+        self._async_thread.start()
+
+    def is_searching(self) -> bool:
+        """Return ``True`` if a background search thread is currently active."""
+        return self._async_thread is not None and self._async_thread.is_alive()
+
+    def poll_move(self) -> tuple[bool, str | None]:
+        """Check whether an asynchronous search started with :meth:`start_search` has finished.
+
+        :return: Tuple ``(done, move)`` where ``done`` is ``True`` once the search completes.
+        :rtype: tuple[bool, str | None]
+        """
+        try:
+            move = self._async_queue.get_nowait()
+            self._async_thread = None
+            return (True, move)
+        except queue.Empty:
+            if self._async_thread is not None and not self._async_thread.is_alive():
+                self._async_thread = None
+                return (True, None)
+            return (False, None)
 
     def tick(self, args: dict | None = None):
         """Advance the UCI engine state machine by one step.
@@ -520,22 +634,29 @@ class uciEngine:
                 output = self.read_stdout()
                 if output == b"":
                     next_state = "DONE"
-                elif output.strip() == b"uciok":
-                    next_state = "SET_HASH"
+                else:
+                    text_line = output.decode("utf8", errors="replace").strip()
+                    if text_line.startswith("id name "):
+                        self.engine_name = text_line[len("id name ") :].strip()
+                    else:
+                        parsed = parse_uci_option_line(text_line)
+                        if parsed is not None:
+                            opt_name, opt_info = parsed
+                            self.supported_options[opt_name] = opt_info
+                    if text_line == "uciok":
+                        next_state = "SET_HASH"
             case "SET_HASH":
-                self.write_stdin("setoption name Hash value 32")
-                next_state = "INIT_TBS_1"
-            case "INIT_TBS_1":
-                self.write_stdin("setoption name NalimovCache value 1")
-                next_state = "INIT_TBS_2"
-            case "INIT_TBS_2":
-                self.write_stdin(r"setoption name NalimovPath value d:\tb;c\tb")
-                next_state = "SET_UCI_ANALYZE_MODE"
-            case "SET_UCI_ANALYZE_MODE":
-                self.write_stdin("setoption name UCI_AnalyseMode value false")
+                if not self.supported_options or "Hash" in self.supported_options:
+                    hash_val = self._clamp_option("Hash", 32)
+                    self.write_stdin(f"setoption name Hash value {hash_val}")
                 next_state = "SET_DIFFICULTY"
             case "SET_DIFFICULTY":
-                self.write_stdin(f"setoption name Skill Level value {self.difficulty}")
+                if not self.supported_options or "Skill Level" in self.supported_options:
+                    skill_val = self._clamp_option("Skill Level", self.difficulty)
+                    self.difficulty = skill_val
+                    self.write_stdin(f"setoption name Skill Level value {skill_val}")
+                if "Threads" in self.supported_options:
+                    self.write_stdin("setoption name Threads value 1")
                 next_state = "IS_READY"
             case "IS_READY":
                 self.write_stdin("isready")
@@ -557,7 +678,7 @@ class uciEngine:
             case "ASK_CPU":
                 movestr = f"position fen {self.inputFEN}"
                 self.write_stdin(movestr)
-                self.write_stdin(f"go depth {self.depth}")
+                self.write_stdin(f"go depth {self.depth} movetime {self.movetime_ms}")
                 next_state = "THINKING"
             case "THINKING":
                 output = self.read_stdout()

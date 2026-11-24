@@ -1,4 +1,4 @@
-"""Unit tests for uciEngine, engine discovery, and release asset downloader."""
+"""Unit tests for uciEngine, engine discovery, option parsing/clamping, async search, and release downloader."""
 
 import io
 import json
@@ -6,6 +6,7 @@ import os
 import stat
 import subprocess
 import tarfile
+import time
 import urllib.request
 import pytest
 from pathlib import Path
@@ -15,6 +16,7 @@ from uciEngine import (
     discover_engines,
     download_engine,
     find_engine_binary,
+    parse_uci_option_line,
     select_release_asset,
     uciEngine,
 )
@@ -42,34 +44,50 @@ class FakeProcess:
         self.terminated = True
 
 
-def test_uci_engine_handshake_and_request_move(monkeypatch):
-    """Verify uciEngine completes handshake with LF/CRLF and parses bestmove skipping blank/info lines."""
+def test_parse_uci_option_line():
+    """Verify UCI option parsing extracts spin min/max bounds."""
+    parsed = parse_uci_option_line("option name Skill Level type spin default 1 min 1 max 10")
+    assert parsed == ("Skill Level", {"type": "spin", "min": 1, "max": 10})
+
+    parsed_hash = parse_uci_option_line("option name Hash type spin default 64 min 1 max 4096")
+    assert parsed_hash == ("Hash", {"type": "spin", "min": 1, "max": 4096})
+
+    assert parse_uci_option_line("id name Plum Chess") is None
+
+
+def test_uci_engine_handshake_option_clamping_and_async_search(monkeypatch):
+    """Verify uciEngine clamps Skill Level to engine max (e.g. 10 for Plum Chess) and supports async start_search/poll_move."""
     fake_proc = FakeProcess(
         [
-            b"Stockfish 16 by the Stockfish developers\n",
-            b"\n",
+            b"id name Plum Chess\n",
+            b"option name Skill Level type spin default 1 min 1 max 10\n",
+            b"option name Hash type spin default 64 min 1 max 4096\n",
             b"uciok\n",
             b"readyok\r\n",
-            b"info depth 1 score cp 20 pv e2e4\n",
-            b"\n",
-            b"bestmove e2e4 ponder e7e5\n",
+            b"info depth 4 score cp 12 pv e2e4\n",
+            b"bestmove e2e4\n",
         ]
     )
     monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake_proc)
 
-    engine = uciEngine(path="stockfish", difficulty=12, moveDepth=15)
+    engine = uciEngine(path="plum_chess", difficulty=18, moveDepth=6, movetime_ms=1000)
+    assert engine.engine_name == "Plum Chess"
+    assert engine.difficulty == 10
     assert engine.current_state == "WAITING"
-    assert engine.difficulty == 12
-    assert engine.depth == 15
 
-    move = engine.request_move("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+    engine.start_search("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+    for _ in range(50):
+        done, move = engine.poll_move()
+        if done:
+            break
+        time.sleep(0.01)
+    assert done is True
     assert move == "e2e4"
-    assert engine.current_state == "WAITING"
 
     written = fake_proc.stdin.getvalue().decode("utf8")
-    assert "uci\n" in written
-    assert "setoption name Skill Level value 12\n" in written
-    assert "go depth 15\n" in written
+    assert "setoption name Skill Level value 10\n" in written
+    assert "NalimovPath" not in written
+    assert "go depth 6 movetime 1000\n" in written
 
     engine.close()
     assert engine.stockfish_process is None
@@ -137,7 +155,6 @@ def test_select_release_asset_for_plum_chess_and_stockfish():
 
 def test_discover_engines_and_download_direct_and_archive(tmp_path, monkeypatch):
     """Verify discover_engines finds binaries in custom directories and download_engine handles raw binaries and tar.gz."""
-    # Initially no engines in isolated directory
     plum_bin = tmp_path / "plum_chess"
     plum_bin.write_bytes(b"#!/bin/sh\necho uciok\n")
     plum_bin.chmod(plum_bin.stat().st_mode | stat.S_IXUSR)
@@ -149,7 +166,6 @@ def test_discover_engines_and_download_direct_and_archive(tmp_path, monkeypatch)
     assert by_key["plum_chess"]["installed"] is True
     assert by_key["plum_chess"]["path"] == str(plum_bin.resolve())
 
-    # Test downloading direct binary (Plum_Chess)
     dl_dir = tmp_path / "downloaded"
 
     def fake_urlopen(req, timeout=30):
