@@ -508,21 +508,21 @@ def getPawnMoves(startIndex : int, cs : chessState, filterForCheck = True):
         advanceRightMove = squareDownRight
         initialRow = 6
 
-    def considerPromotion (startIndex : int, endIndex : int, cs : chessState):
+    def considerPromotion (startIndex : int, endIndex : int, cs : chessState, is_capture = False):
         result = []
         (endCol,endRow,endLabel) = convertIndex(endIndex)
         if(cs.pieceList[startIndex].isupper()):
             if(endRow == 7):
-                result.append(chessMove(startIndex,endIndex,promotionPiece="Q"))
-                result.append(chessMove(startIndex,endIndex,promotionPiece="R"))
-                result.append(chessMove(startIndex,endIndex,promotionPiece="B"))
-                result.append(chessMove(startIndex,endIndex,promotionPiece="N"))
+                result.append(chessMove(startIndex,endIndex,is_capture=is_capture,promotionPiece="Q"))
+                result.append(chessMove(startIndex,endIndex,is_capture=is_capture,promotionPiece="R"))
+                result.append(chessMove(startIndex,endIndex,is_capture=is_capture,promotionPiece="B"))
+                result.append(chessMove(startIndex,endIndex,is_capture=is_capture,promotionPiece="N"))
         else:
             if(endRow == 0):
-                result.append(chessMove(startIndex,endIndex,promotionPiece="q"))
-                result.append(chessMove(startIndex,endIndex,promotionPiece="r"))
-                result.append(chessMove(startIndex,endIndex,promotionPiece="b"))
-                result.append(chessMove(startIndex,endIndex,promotionPiece="n"))     
+                result.append(chessMove(startIndex,endIndex,is_capture=is_capture,promotionPiece="q"))
+                result.append(chessMove(startIndex,endIndex,is_capture=is_capture,promotionPiece="r"))
+                result.append(chessMove(startIndex,endIndex,is_capture=is_capture,promotionPiece="b"))
+                result.append(chessMove(startIndex,endIndex,is_capture=is_capture,promotionPiece="n"))     
         return result       
 
     def considerDiagonal(startIndex : int, cs : chessState, move):
@@ -544,10 +544,11 @@ def getPawnMoves(startIndex : int, cs : chessState, filterForCheck = True):
             case 2: # Same color
                 None
             case 3: # Opposite color
-                # Move
-                result.append(chessMove(startIndex,endIndex,is_capture=True,enpassantFlag=is_enpassant_flag))
-                # Handle promotion if necessary
-                result.extend(considerPromotion(startIndex,endIndex,cs))
+                promotions = considerPromotion(startIndex,endIndex,cs,is_capture=True)
+                if len(promotions) > 0:
+                    result.extend(promotions)
+                else:
+                    result.append(chessMove(startIndex,endIndex,is_capture=True,enpassantFlag=is_enpassant_flag))
             case 4: # Opposite King
                 result.append(chessMove(startIndex,endIndex,is_check=True))
         return result
@@ -562,10 +563,11 @@ def getPawnMoves(startIndex : int, cs : chessState, filterForCheck = True):
         case 0: # Invalid
             None
         case 1: # Normal
-            # Move Forward
-            result.append(chessMove(startIndex,endIndex))
-            # Handle promotion if necessary
-            result.extend(considerPromotion(startIndex,endIndex,cs))
+            promotions = considerPromotion(startIndex,endIndex,cs,is_capture=False)
+            if len(promotions) > 0:
+                result.extend(promotions)
+            else:
+                result.append(chessMove(startIndex,endIndex))
             fwdIdex = endIndex # Mark this forward
         case 2: # Same color
             None

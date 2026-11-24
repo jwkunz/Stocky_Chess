@@ -27,7 +27,7 @@ class Ui(QtWidgets.QMainWindow):
     :vartype version: str
     """
 
-    version = "1.0.6"
+    version = "1.0.7""
 
     def __init__(self):
         """Initialize the main window, board widget, signal connections, and default game state."""
