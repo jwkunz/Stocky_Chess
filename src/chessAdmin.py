@@ -449,6 +449,16 @@ def movePiece(move : chessMove, cs : chessState, filterForCheck = True):
         elif(move.start == 7):
             cs.castle_black_king = False
 
+    # Revoke castling rights if a rook's starting square is captured/occupied
+    if move.end == 56:
+        cs.castle_white_queen = False
+    elif move.end == 63:
+        cs.castle_white_king = False
+    elif move.end == 0:
+        cs.castle_black_queen = False
+    elif move.end == 7:
+        cs.castle_black_king = False
+
 
 # Looks for check after a move is made
 def filterCheckResolve(moveList : list, cs : chessState):
