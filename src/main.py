@@ -1,6 +1,6 @@
 """Main PyQt6 application window, dialogs, chess clocks, and event loop for Stocky Chess."""
 
-from PyQt6 import QtWidgets, uic
+from PyQt6 import QtCore, QtGui, QtWidgets, uic
 from PyQt6.QtWidgets import (
     QDialog,
     QLabel,
@@ -43,20 +43,24 @@ class Ui(QtWidgets.QMainWindow):
     :vartype version: str
     """
 
-    version = "2.0.4"
+    version = "2.0.5"
 
     def __init__(self):
         """Initialize the main window, board widget, signal connections, and default game state."""
         super(Ui, self).__init__()
         uic.loadUi("resources/StockyChess.ui", self)
 
-        S = QtWidgets.QGraphicsScene()
+        board_len = self.viewport.width()
+        S = QtWidgets.QGraphicsScene(0, 0, board_len, board_len)
         self.viewport.setScene(S)
+        self.viewport.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.viewport.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.viewport.show()
 
         self.chessBoardWidget = chessBoard_widget(
-            self.viewport.width(), self.viewport.width() // 40, True
+            board_len, board_len // 40, True
         )
+        self._boardPixmapItem = S.addPixmap(QtGui.QPixmap(board_len, board_len))
         self.gameClickHandler = gameClickHandler()
 
         self.whiteEngine: uciEngine | None = None
@@ -284,8 +288,7 @@ class Ui(QtWidgets.QMainWindow):
         if updateBoard:
             self.chessBoardWidget.renderBoard(renderGame)
         self.FENbar.setText(renderGame.getFENstring())
-        self.viewport.scene().clear()
-        self.viewport.scene().addPixmap(self.chessBoardWidget.pixmap())
+        self._boardPixmapItem.setPixmap(self.chessBoardWidget.pixmap())
         self.update_move_slider(renderGame.turn)
         self.updateMaterial()
         self.repaint()

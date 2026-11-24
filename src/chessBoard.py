@@ -140,6 +140,7 @@ class chessBoard_widget(QtWidgets.QLabel):
         :type highlightedMoves: list[chessMove] | None
         """
         canvas = QtGui.QPixmap(self.length, self.length)
+        canvas.fill(Qt.GlobalColor.black)
         painter = QPainter(canvas)
 
         for i in range(8):
