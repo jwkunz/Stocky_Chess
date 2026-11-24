@@ -1,14 +1,46 @@
-'''
-This file has a bunch of functions that modifies and evaluates a chessState.  
-This is where the key chess logic comes in.  These functions adminster the game.
-'''
+"""Core chess rules, move generation, check filtering, and game-over evaluation."""
 
 from chessState import chessState, player_t
 import copy
 
-# This is used to document a move and any flags
+
 class chessMove:
-    def __init__(self, start : int, end : int, is_capture = False, promotionPiece = "", enpassantFlag = False, is_check = False, castleRookSquares = []):  
+    """Represents a candidate or executed chess move and its associated rule flags.
+
+    :ivar start: Starting square index (0..63).
+    :vartype start: int
+    :ivar end: Destination square index (0..63).
+    :vartype end: int
+    :ivar is_capture: Whether the move captures an opposing piece.
+    :vartype is_capture: bool
+    :ivar enpassantFlag: Whether the move is a two-square pawn advance or en passant capture.
+    :vartype enpassantFlag: bool
+    :ivar is_check: Whether the move directly attacks the opposing king.
+    :vartype is_check: bool
+    :ivar promotionPiece: FEN character of the promoted piece, or ``''`` if not a promotion.
+    :vartype promotionPiece: str
+    :ivar castleRookSquares: Two-element list ``[rook_start, rook_end]`` for castling moves.
+    :vartype castleRookSquares: list[int]
+    """
+
+    def __init__(self, start : int, end : int, is_capture = False, promotionPiece = "", enpassantFlag = False, is_check = False, castleRookSquares = []):
+        """Initialize a chess move descriptor.
+
+        :param start: Starting board square index (0..63).
+        :type start: int
+        :param end: Ending board square index (0..63).
+        :type end: int
+        :param is_capture: True if the move captures an opponent piece.
+        :type is_capture: bool
+        :param promotionPiece: Promotion piece character (e.g., ``'Q'``, ``'n'``) or ``''``.
+        :type promotionPiece: str
+        :param enpassantFlag: True if the move triggers or executes en passant.
+        :type enpassantFlag: bool
+        :param is_check: True if the move targets the opponent's king.
+        :type is_check: bool
+        :param castleRookSquares: Rook ``[from_idx, to_idx]`` squares when castling.
+        :type castleRookSquares: list[int]
+        """
         self.start = start
         self.end = end
         self.is_capture = is_capture
@@ -17,65 +49,130 @@ class chessMove:
         self.promotionPiece = promotionPiece
         self.castleRookSquares = castleRookSquares
 
+
 # Gets the square index moving from rank A -> H. 
 # Return 64 if off the board
 def squareUp(idx : int):
+    """Return the square index one rank up (towards rank 8), or 64 if off the board.
+
+    :param idx: Starting square index (0..63).
+    :type idx: int
+    :return: Target square index, or 64 if out of bounds.
+    :rtype: int
+    """
     if((idx <= 7) or (idx >= 64)):
         return 64
     return idx - 8        
 
+
 # Gets the square index moving from rank H -> A. 
 # Return 64 if off the board
 def squareDown(idx : int):
+    """Return the square index one rank down (towards rank 1), or 64 if off the board.
+
+    :param idx: Starting square index (0..63).
+    :type idx: int
+    :return: Target square index, or 64 if out of bounds.
+    :rtype: int
+    """
     if(idx >=56):
         return 64
     return idx + 8
 
+
 # Gets the square index moving from file 8 -> 1. 
 # Return 64 if off the board
 def squareLeft(idx : int):
+    """Return the square index one file left (towards file A), or 64 if off the board.
+
+    :param idx: Starting square index (0..63).
+    :type idx: int
+    :return: Target square index, or 64 if out of bounds.
+    :rtype: int
+    """
     if(idx % 8 == 0):
         return 64
     return idx - 1
 
+
 # Gets the square index moving from file 1 -> 8. 
 # Return 64 if off the board
 def squareRight(idx : int):
+    """Return the square index one file right (towards file H), or 64 if off the board.
+
+    :param idx: Starting square index (0..63).
+    :type idx: int
+    :return: Target square index, or 64 if out of bounds.
+    :rtype: int
+    """
     if(idx % 8 == 7):
         return 64
     return idx + 1
 
+
 # Gets the square index moving up then right
 # Return 64 if off the board
 def squareUpRight(idx : int):
+    """Return the square index one step diagonally up-right, or 64 if off the board.
+
+    :param idx: Starting square index (0..63).
+    :type idx: int
+    :return: Target square index, or 64 if out of bounds.
+    :rtype: int
+    """
     val = squareRight(idx)
     if(val >= 64):
         return val
     return squareUp(val)
 
+
 # Gets the square index moving up then left
 # Return 64 if off the board
 def squareUpLeft(idx : int):
+    """Return the square index one step diagonally up-left, or 64 if off the board.
+
+    :param idx: Starting square index (0..63).
+    :type idx: int
+    :return: Target square index, or 64 if out of bounds.
+    :rtype: int
+    """
     val = squareLeft(idx)
     if(val >= 64):
         return val
     return squareUp(val)        
 
+
 # Gets the square index moving down then right
 # Return 64 if off the board
 def squareDownRight(idx : int):
+    """Return the square index one step diagonally down-right, or 64 if off the board.
+
+    :param idx: Starting square index (0..63).
+    :type idx: int
+    :return: Target square index, or 64 if out of bounds.
+    :rtype: int
+    """
     val = squareRight(idx)
     if(val >= 64):
         return val
     return squareDown(val)
 
+
 # Gets the square index moving down then left
 # Return 64 if off the board
 def squareDownLeft(idx : int):
+    """Return the square index one step diagonally down-left, or 64 if off the board.
+
+    :param idx: Starting square index (0..63).
+    :type idx: int
+    :return: Target square index, or 64 if out of bounds.
+    :rtype: int
+    """
     val = squareLeft(idx)
     if(val >= 64):
         return val
     return squareDown(val)        
+
 
 # For a move with given color piece_sprite
 # returns "0" if move is off the board, or invalid
@@ -84,6 +181,18 @@ def squareDownLeft(idx : int):
 # returns "3" if move collides with opposite color 
 # returns "4" if move collides with opposite king
 def getCollisionType(from_index : int, to_index : int, cs : chessState):
+    """Classify the interaction of moving a piece from ``from_index`` to ``to_index``.
+
+    :param from_index: Origin square index (0..63).
+    :type from_index: int
+    :param to_index: Destination square index.
+    :type to_index: int
+    :param cs: Current chess state.
+    :type cs: chessState
+    :return: ``0`` if invalid/off-board, ``1`` if empty square, ``2`` if same-color piece,
+        ``3`` if opposing non-king piece, or ``4`` if opposing king.
+    :rtype: int
+    """
     if(cs.pieceList[from_index] == None):
         return 0
     if(to_index >= 64):
@@ -98,8 +207,16 @@ def getCollisionType(from_index : int, to_index : int, cs : chessState):
     else:
         return 3
 
+
 # Get piece text name
 def getPiecetoTextName(piece):
+    """Convert a single-character FEN piece symbol into its human-readable English name.
+
+    :param piece: Single-character FEN piece code (e.g., ``'P'``, ``'k'``).
+    :type piece: str
+    :return: Full descriptive piece name (e.g., ``'white pawn'``), or ``None``.
+    :rtype: str | None
+    """
     match piece:
         case "P":
             return "white pawn"
@@ -128,35 +245,77 @@ def getPiecetoTextName(piece):
         case _:
             None
 
+
 # Get text name on square
 def getPieceTextNameOn(idx, cs : chessState):
+    """Return the human-readable name of the piece on ``idx``, or ``None`` if empty.
+
+    :param idx: Board square index (0..63).
+    :type idx: int
+    :param cs: Current chess state.
+    :type cs: chessState
+    :return: Descriptive piece name or ``None``.
+    :rtype: str | None
+    """
     if(cs.pieceList[idx] == None):
         return None
     return getPiecetoTextName(cs.pieceList[idx])
 
 
-         
 # Takes a square label and returns the (col,row,index)
 def convertLabel(label : str):
+    """Convert an algebraic square label (e.g., ``'e4'``) to ``(col, row, index)``.
+
+    :param label: Two-character algebraic coordinate.
+    :type label: str
+    :return: Tuple ``(col, row, index)`` where ``index`` is in 0..63.
+    :rtype: tuple[int, int, int]
+    """
     col = ord(label[0].upper())-65
     row = 7-(ord(label[1].upper())-49) # One indexed
     return (col,row,row*8 + col)
 
+
 # Index to (col,row, label)
 def convertIndex(index : int):
+    """Convert a 0..63 board index to ``(col, row, label)``.
+
+    :param index: Board square index (0..63).
+    :type index: int
+    :return: Tuple ``(col, row, label)`` where ``label`` is uppercase algebraic (e.g., ``'E4'``).
+    :rtype: tuple[int, int, str]
+    """
     row = 7-(index // 8)
     col = index % 8
     label = f"{chr(col+65)}{chr(row+48+1)}" # One indexed
     return (col,row,label)
 
+
 # Index to (index, label)
 def convertColRow(col : int, row : int):
+    """Convert 0-based ``(col, row)`` indices to ``(index, label)``.
+
+    :param col: File index (0..7).
+    :type col: int
+    :param row: Rank row index (0..7, from top rank 8 to bottom rank 1).
+    :type row: int
+    :return: Tuple ``(index, label)``.
+    :rtype: tuple[int, str]
+    """
     label = f"{chr(col+65)}{chr((7-row)+48+1)}" # One indexed
     return (row*8+col,label)
+
 
 # Evaluates whether the given chessState has king collision
 # True = the cs.turn king is under check form the !cs.turn
 def hasKingCollision(cs : chessState):
+    """Determine whether the active player's king (``cs.turn``) is currently under attack.
+
+    :param cs: Chess state to evaluate.
+    :type cs: chessState
+    :return: ``True`` if the side to move is in check or adjacent to the enemy king.
+    :rtype: bool
+    """
     is_white = (cs.turn == 'w')
     for idx,piece in enumerate(cs.pieceList):
         # If opposite color 
@@ -179,8 +338,16 @@ def hasKingCollision(cs : chessState):
 
     return False
 
+
 # Look for 0 = not over, 1 = checkmate, 2 = stalemate
 def isGameOver(cs : chessState):
+    """Check whether the current position is checkmate, stalemate, or ongoing.
+
+    :param cs: Chess state to evaluate for the side to move.
+    :type cs: chessState
+    :return: ``0`` if legal moves exist, ``1`` for checkmate, or ``2`` for stalemate.
+    :rtype: int
+    """
     # If at least one move is possible
     is_white = (cs.turn == 'w')
     for idx,piece in enumerate(cs.pieceList):
@@ -198,6 +365,18 @@ def isGameOver(cs : chessState):
 
 # Moves a piece and toggles the turn
 def movePiece(move : chessMove, cs : chessState, filterForCheck = True):
+    """Apply a move to the given :class:`chessState.chessState` in place and advance the turn.
+
+    Updates piece locations, castling rooks, pawn promotions, en passant targets/captures,
+    half-move clock, full-move counter, and castling rights.
+
+    :param move: Move to execute.
+    :type move: chessMove
+    :param cs: Board state to mutate.
+    :type cs: chessState
+    :param filterForCheck: Unused flag retained for API compatibility.
+    :type filterForCheck: bool
+    """
     # Is a promotion, or normal / castle move
     was_white_castle = False
     was_black_castle = False
@@ -267,8 +446,18 @@ def movePiece(move : chessMove, cs : chessState, filterForCheck = True):
         elif(move.start == 7):
             cs.castle_black_king = False
 
+
 # Looks for check after a move is made
-def filterCheckResolve(moveList : list, cs : chessState):  
+def filterCheckResolve(moveList : list, cs : chessState):
+    """Filter out candidate moves that leave the moving player's own king in check.
+
+    :param moveList: Candidate moves to test.
+    :type moveList: list[chessMove]
+    :param cs: Current board state prior to the move.
+    :type cs: chessState
+    :return: Subset of ``moveList`` that does not leave the player in check.
+    :rtype: list[chessMove]
+    """
     filteredResults = []
     for move in moveList:
         pretendGame = copy.deepcopy(cs)
@@ -282,6 +471,17 @@ def filterCheckResolve(moveList : list, cs : chessState):
 
 # Moves for a pawn.  Returns a list of chessMove (or empty list)
 def getPawnMoves(startIndex : int, cs : chessState, filterForCheck = True):
+    """Generate candidate or legal moves for a pawn at ``startIndex``.
+
+    :param startIndex: Square index of the pawn (0..63).
+    :type startIndex: int
+    :param cs: Current board state.
+    :type cs: chessState
+    :param filterForCheck: When ``True``, filters out moves that leave own king in check.
+    :type filterForCheck: bool
+    :return: List of pawn moves.
+    :rtype: list[chessMove]
+    """
     result = []
 
     if(cs.pieceList[startIndex].isupper()):
@@ -395,6 +595,17 @@ def getPawnMoves(startIndex : int, cs : chessState, filterForCheck = True):
 
 # Moves for a knight.  Returns a list of chessMove (or empty list)
 def getKnightMoves(startIndex : int, cs : chessState, filterForCheck = True):
+    """Generate candidate or legal moves for a knight at ``startIndex``.
+
+    :param startIndex: Square index of the knight (0..63).
+    :type startIndex: int
+    :param cs: Current board state.
+    :type cs: chessState
+    :param filterForCheck: When ``True``, filters out moves that leave own king in check.
+    :type filterForCheck: bool
+    :return: List of knight moves.
+    :rtype: list[chessMove]
+    """
 
     # Shared code for a knight move
     def considerKnightMove(move_lambda,startIndex : int, cs : chessState, result : list):
@@ -431,8 +642,20 @@ def getKnightMoves(startIndex : int, cs : chessState, filterForCheck = True):
     else:
         return result
 
+
 # Shared code for moves until stop for bishops, rooks, queens
 def considerBishopRookQueenMove(move_lambda,startIndex : int, cs : chessState, result : list):
+    """Slide along a ray defined by ``move_lambda`` and append reachable moves to ``result``.
+
+    :param move_lambda: Step function taking a square index and returning the next square index.
+    :type move_lambda: collections.abc.Callable[[int], int]
+    :param startIndex: Origin square index (0..63).
+    :type startIndex: int
+    :param cs: Current board state.
+    :type cs: chessState
+    :param result: Mutable list of :class:`chessMove` objects to append to.
+    :type result: list[chessMove]
+    """
     a = startIndex
     b = a
     while(True):
@@ -455,8 +678,20 @@ def considerBishopRookQueenMove(move_lambda,startIndex : int, cs : chessState, r
                 result.append(chessMove(startIndex,b,is_check=True))
                 return 
 
+
 # Moves for a bishop.  Returns a list of chessMove (or empty list)
 def getBishopMoves(startIndex : int, cs : chessState, filterForCheck = True):
+    """Generate candidate or legal moves for a bishop at ``startIndex``.
+
+    :param startIndex: Square index of the bishop (0..63).
+    :type startIndex: int
+    :param cs: Current board state.
+    :type cs: chessState
+    :param filterForCheck: When ``True``, filters out moves that leave own king in check.
+    :type filterForCheck: bool
+    :return: List of bishop moves.
+    :rtype: list[chessMove]
+    """
     result = []
     considerBishopRookQueenMove(squareUpLeft,startIndex,cs,result)
     considerBishopRookQueenMove(squareDownLeft,startIndex,cs,result)
@@ -469,8 +704,20 @@ def getBishopMoves(startIndex : int, cs : chessState, filterForCheck = True):
     else:
         return result
 
+
 # Moves for a rook.  Returns a list of chessMove (or empty list)
 def getRookMoves(startIndex : int, cs : chessState, filterForCheck = True):
+    """Generate candidate or legal moves for a rook at ``startIndex``.
+
+    :param startIndex: Square index of the rook (0..63).
+    :type startIndex: int
+    :param cs: Current board state.
+    :type cs: chessState
+    :param filterForCheck: When ``True``, filters out moves that leave own king in check.
+    :type filterForCheck: bool
+    :return: List of rook moves.
+    :rtype: list[chessMove]
+    """
     result = []
     considerBishopRookQueenMove(squareUp,startIndex,cs,result)
     considerBishopRookQueenMove(squareDown,startIndex,cs,result)
@@ -484,8 +731,20 @@ def getRookMoves(startIndex : int, cs : chessState, filterForCheck = True):
     else:
         return result
 
+
 # Moves for a queen.  Returns a list of chessMove (or empty list)
 def getQueenMoves(startIndex : int, cs : chessState, filterForCheck = True):
+    """Generate candidate or legal moves for a queen at ``startIndex``.
+
+    :param startIndex: Square index of the queen (0..63).
+    :type startIndex: int
+    :param cs: Current board state.
+    :type cs: chessState
+    :param filterForCheck: When ``True``, filters out moves that leave own king in check.
+    :type filterForCheck: bool
+    :return: List of queen moves.
+    :rtype: list[chessMove]
+    """
     result = []
     result.extend(getBishopMoves(startIndex,cs,filterForCheck))
     result.extend(getRookMoves(startIndex,cs,filterForCheck))
@@ -497,8 +756,18 @@ def getQueenMoves(startIndex : int, cs : chessState, filterForCheck = True):
     else:
         return result
 
+
 # Moves for a king.  Returns a list of chessMove (or empty list)
 def getKingMoves(startIndex : int, cs : chessState):
+    """Generate legal moves (including castling) for a king at ``startIndex``.
+
+    :param startIndex: Square index of the king (0..63).
+    :type startIndex: int
+    :param cs: Current board state.
+    :type cs: chessState
+    :return: List of legal king moves.
+    :rtype: list[chessMove]
+    """
 
     def considerKingSideCastle(startIndex:int, cs:chessState, result : list):
         # Can't be in check
@@ -630,11 +899,23 @@ def getKingMoves(startIndex : int, cs : chessState):
     considerKingMoves(startIndex,cs,result)
     return result
 
+
 # Return a list of valid moves from a given square
 # Each move is tuple with (idx,type_of_move) where 
 # type_of_move can be "X"=capture", "N"=normal, "E"=en passant, 
 # "P"=promotion, "C"=check, or "K,k,Q,q" for castling in that direction
 def getMovesFromSquare(start : int, cs : chessState, filterForCheck = True):
+    """Return all valid moves originating from the ``start`` square.
+
+    :param start: Origin square index (0..63).
+    :type start: int
+    :param cs: Current chess state.
+    :type cs: chessState
+    :param filterForCheck: Whether to filter out moves leaving the moving side in check.
+    :type filterForCheck: bool
+    :return: List of :class:`chessMove` objects available from ``start``.
+    :rtype: list[chessMove]
+    """
     piece = cs.pieceList[start]
     match piece.upper():
         case "P":

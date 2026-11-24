@@ -1,10 +1,33 @@
+"""UCI engine wrapper for communicating with a Stockfish subprocess."""
+
 from random import randint
 import time
 import subprocess
 
+
 class uciEngine():
+    """Manages a Stockfish engine subprocess via the Universal Chess Interface (UCI) protocol.
+
+    :ivar stockfish_process: The underlying Stockfish Popen process.
+    :vartype stockfish_process: subprocess.Popen
+    :ivar current_state: Current state in the UCI handshake/search state machine.
+    :vartype current_state: str
+    :ivar difficulty: Configured Stockfish Skill Level (1-20).
+    :vartype difficulty: int
+    :ivar depth: Search depth passed to ``go depth``.
+    :vartype depth: int
+    """
 
     def __init__(self,path='stockfish.exe',difficulty=20,moveDepth=20):
+        """Launch Stockfish and run the UCI initialization state machine until ready.
+
+        :param path: Path to the Stockfish executable.
+        :type path: str
+        :param difficulty: Stockfish Skill Level (1 to 20).
+        :type difficulty: int
+        :param moveDepth: Search depth in plies.
+        :type moveDepth: int
+        """
         # Launch the executable in a subprocess
         self.stockfish_process = subprocess.Popen([path], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
         # Initial state
@@ -18,6 +41,12 @@ class uciEngine():
             self.tick()
 
     def tick(self,args=None):
+        """Advance the UCI engine state machine by one step.
+
+        :param args: Dictionary containing ``'inputFEN'`` when requesting a move, and
+            populated with ``'bestMove'`` once Stockfish responds.
+        :type args: dict | None
+        """
         next_state = self.current_state
         match self.current_state:
             case "START_UCI":
@@ -75,13 +104,29 @@ class uciEngine():
         self.current_state = next_state
 
     def write_stdin(self,message):
+        """Write a single UCI command line to the Stockfish process stdin.
+
+        :param message: UCI command string (without trailing newline).
+        :type message: str
+        """
         self.stockfish_process.stdin.write(bytes(f'{message}\n',"utf8"))
         self.stockfish_process.stdin.flush()  
+
     def read_stdout(self):
+        """Read a single line of output from the Stockfish process stdout.
+
+        :return: Raw bytes line read from stdout.
+        :rtype: bytes
+        """
         line = self.stockfish_process.stdout.readline()
         return line
     
     def get_user_move_blocking(self):
+        """Prompt the user on the terminal for a move string.
+
+        :return: Move string entered by the user.
+        :rtype: str
+        """
         color = "White"
         if(self.cpu_white):
             color = "Black"
@@ -92,4 +137,3 @@ class uciEngine():
 
         # Return
         return move
-

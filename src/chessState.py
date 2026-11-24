@@ -1,10 +1,18 @@
+"""Board state representation and FEN serialization for Stocky Chess."""
+
 from enum import Enum
 
+
 class player_t(Enum):
+    """Enumeration of chess players by color."""
+
     BLACK = 0
     WHITE = 1
 
+
 class piece_t(Enum):
+    """Enumeration of chess piece types."""
+
     KING = 0
     QUEEN = 1
     BISHOP = 2
@@ -12,9 +20,35 @@ class piece_t(Enum):
     ROOK = 4
     PAWN = 5
 
+
 class chessState:
-    
+    """Represents a complete chess position including board squares and FEN metadata.
+
+    :ivar pieceList: List of 64 square values (index 0 is A8, index 63 is H1),
+        containing single-character piece codes or ``None``.
+    :vartype pieceList: list[str | None]
+    :ivar turn: Active player color (``'w'`` or ``'b'``).
+    :vartype turn: str
+    :ivar castle_black_king: Whether Black can castle kingside.
+    :vartype castle_black_king: bool
+    :ivar castle_black_queen: Whether Black can castle queenside.
+    :vartype castle_black_queen: bool
+    :ivar castle_white_king: Whether White can castle kingside.
+    :vartype castle_white_king: bool
+    :ivar castle_white_queen: Whether White can castle queenside.
+    :vartype castle_white_queen: bool
+    :ivar enpassant_targets: Algebraic target square for en passant or ``'-'``.
+    :vartype enpassant_targets: str
+    :ivar half_move: Half-move clock since the last pawn advance or capture.
+    :vartype half_move: int
+    :ivar full_move: Full-move number, incremented after Black's turn.
+    :vartype full_move: int
+    :ivar promotable: Flag indicating whether the current turn has a promotion.
+    :vartype promotable: bool
+    """
+
     def __init__(self):
+        """Initialize an empty chess board state with default counters and flags."""
         # Databases
         self.pieceList = []
         for i in range(64):
@@ -37,10 +71,16 @@ class chessState:
 
     # Sets all the positions to start of game
     def setNewGame(self):
+        """Reset the board to the standard chess starting position."""
         self.setFENstring("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
 
     # Get the current board's fen string
     def getFENstring(self):
+        """Serialize the current board state into a Forsyth-Edwards Notation (FEN) string.
+
+        :return: The FEN string representing the current state.
+        :rtype: str
+        """
         fen = ""
         blank_counter = 0
         for i in range(8):
@@ -93,7 +133,11 @@ class chessState:
 
     # Set the board to a given FEN string
     def setFENstring(self,fen : str):
-        
+        """Populate the board state from a Forsyth-Edwards Notation (FEN) string.
+
+        :param fen: A space-delimited 6-field FEN string.
+        :type fen: str
+        """
         # Get the various fields
         fields = fen.split()
 
@@ -156,6 +200,7 @@ class chessState:
 
     # Goes white to black.  Does not handle half moves
     def toggle_turn(self):
+        """Switch the active turn between White and Black and increment full moves after Black's turn."""
         if(self.turn == "w"):
             self.turn = "b"
         else:

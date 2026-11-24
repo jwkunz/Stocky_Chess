@@ -1,3 +1,5 @@
+"""Chess board QLabel widget for rendering tiles, coordinates, pieces, and move highlights."""
+
 from PyQt6 import QtCore, QtGui, QtWidgets, uic
 from PyQt6.QtCore import Qt,QRect
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen
@@ -5,16 +7,41 @@ import sys
 from chessState import *
 from chessAdmin import convertIndex
 
+
 class board_color_t():
+    """Color constants used for rendering board tiles and move highlight rings."""
+
     WHITE_TILE_COLOR = Qt.GlobalColor.white
     BLACK_TILE_COLOR = Qt.GlobalColor.darkGreen
     MOVE_TILE_COLOR = Qt.GlobalColor.blue
     CAPTURE_TILE_COLOR = Qt.GlobalColor.darkRed
     PROMOTION_TILE_COLOR = Qt.GlobalColor.green
     CHECK_TILE_COLOR = Qt.GlobalColor.darkYellow
-        
+
+
 class chessBoard_widget(QtWidgets.QLabel):
+    """Custom QLabel widget that draws the chess board, piece sprites, and highlighted moves.
+
+    :ivar length: Total pixel width and height of the square board widget.
+    :vartype length: int
+    :ivar borderTh: Pixel thickness of the coordinate border around the 8x8 grid.
+    :vartype borderTh: int
+    :ivar white_bottom: When ``True``, White is rendered at the bottom of the board.
+    :vartype white_bottom: bool
+    :ivar squareLength: Pixel width and height of an individual board square.
+    :vartype squareLength: int
+    """
+
     def __init__(self,length : int, borderTh : int, white_bottom = True):
+        """Initialize the chess board widget dimensions and orientation.
+
+        :param length: Total width/height of the board widget in pixels.
+        :type length: int
+        :param borderTh: Border thickness in pixels.
+        :type borderTh: int
+        :param white_bottom: Whether White is displayed on the bottom ranks.
+        :type white_bottom: bool
+        """
         super().__init__()
         self.length = length
         self.borderTh = borderTh  
@@ -22,6 +49,19 @@ class chessBoard_widget(QtWidgets.QLabel):
         self.squareLength = (length - 2*borderTh) // 8
 
     def _drawSquare(self, x :int ,y : int, length : int, color :  board_color_t, painter : QPainter):
+        """Draw a single filled square on the board.
+
+        :param x: Top-left X coordinate in pixels.
+        :type x: int
+        :param y: Top-left Y coordinate in pixels.
+        :type y: int
+        :param length: Side length of the square in pixels.
+        :type length: int
+        :param color: Fill color for the square.
+        :type color: Qt.GlobalColor
+        :param painter: Active QPainter instance.
+        :type painter: QPainter
+        """
         # Cache pevious brush 
         b = painter.brush()
         # Change color
@@ -33,6 +73,21 @@ class chessBoard_widget(QtWidgets.QLabel):
         return
 
     def _drawText(self, text : str, x :int ,y : int, length : int, color :  board_color_t, painter : QPainter):
+        """Draw centered coordinate text within a bounding square.
+
+        :param text: Text label to draw (e.g., file or rank character).
+        :type text: str
+        :param x: Top-left X coordinate in pixels.
+        :type x: int
+        :param y: Top-left Y coordinate in pixels.
+        :type y: int
+        :param length: Width and height of the text bounding box.
+        :type length: int
+        :param color: Pen color for the text.
+        :type color: Qt.GlobalColor
+        :param painter: Active QPainter instance.
+        :type painter: QPainter
+        """
         # Cache pevious brush 
         b = painter.pen()
         # Change color
@@ -45,6 +100,19 @@ class chessBoard_widget(QtWidgets.QLabel):
         return
 
     def _drawPiece(self, x :int ,y : int, length : int, piece :  str, painter : QPainter):
+        """Draw a chess piece sprite onto a board square.
+
+        :param x: Top-left X coordinate of the square in pixels.
+        :type x: int
+        :param y: Top-left Y coordinate of the square in pixels.
+        :type y: int
+        :param length: Side length of the square in pixels.
+        :type length: int
+        :param piece: Single-character FEN piece identifier.
+        :type piece: str
+        :param painter: Active QPainter instance.
+        :type painter: QPainter
+        """
         # Get sprite image
         I = QImage("resources/ChessPieces")
         s = int(length * 0.8)
@@ -125,7 +193,13 @@ class chessBoard_widget(QtWidgets.QLabel):
     # Call this to put all the sprites on the pixmap
     # Render moves can be a list of available moves to draw (or None)
     def renderBoard(self, cs : chessState, highlightedMoves = []):
+        """Render the full chess board, pieces, coordinates, and optional move highlights.
 
+        :param cs: The board state to render.
+        :type cs: chessState
+        :param highlightedMoves: List of :class:`chessAdmin.chessMove` objects to highlight.
+        :type highlightedMoves: list[chessMove]
+        """
         canvas = QtGui.QPixmap(self.length,self.length)
         painter = QPainter(canvas)
 
@@ -198,6 +272,15 @@ class chessBoard_widget(QtWidgets.QLabel):
 
     # Take pixel coordinates within the widget and return the square number
     def coordToSquare(self, x : int, y: int):
+        """Convert widget pixel coordinates to a 0-63 board square index.
+
+        :param x: Horizontal pixel coordinate.
+        :type x: int
+        :param y: Vertical pixel coordinate.
+        :type y: int
+        :return: Board index in the range 0..63 (or >=64 if outside the board).
+        :rtype: int
+        """
         col = round((x+self.squareLength/2) / self.squareLength) - 1
         row = round((y+self.squareLength/2) / self.squareLength) - 1
         if(self.white_bottom == False):
@@ -207,6 +290,13 @@ class chessBoard_widget(QtWidgets.QLabel):
                
     # Index XY
     def index_to_xy(self, index : int):
+        """Convert a 0-63 board square index into top-left pixel coordinates on the canvas.
+
+        :param index: Board square index (0..63).
+        :type index: int
+        :return: Tuple ``(x, y)`` of pixel coordinates.
+        :rtype: tuple[int, int]
+        """
         (j,i,label) = convertIndex(index)
         # Flip locations based on view state
         if(self.white_bottom):
@@ -219,5 +309,3 @@ class chessBoard_widget(QtWidgets.QLabel):
 
 if __name__ == "__main__":
     None
-    
-

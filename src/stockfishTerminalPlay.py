@@ -1,13 +1,23 @@
+"""Standalone terminal interface for playing chess against Stockfish over UCI."""
+
 from random import randint
 import time
 import subprocess
 
 ### Use this one to play with in stand alone mode
 
+
 class stockfishTerminalPlay():
+    """Interactive command-line chess session against a Stockfish subprocess.
+
+    :cvar debug_mode: When ``True``, prints UCI traffic to stdout.
+    :vartype debug_mode: bool
+    """
+
     debug_mode = False
 
     def __init__(self):
+        """Launch the Stockfish executable and set the initial UCI state."""
         self.debug_print("Initializing Game by Launching Engine...")
         # Launch the executable in a subprocess
         self.stockfish_process = subprocess.Popen(['stockfish.exe'], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
@@ -16,6 +26,7 @@ class stockfishTerminalPlay():
         self.debug_print("Launched Engine...")
 
     def tick(self):
+        """Advance the terminal game state machine by one step."""
         next_state = self.current_state
         match self.current_state:
             case "START_UCI":
@@ -96,15 +107,31 @@ class stockfishTerminalPlay():
         self.current_state = next_state
 
     def write_stdin(self,message):
+        """Send a UCI command line to Stockfish.
+
+        :param message: UCI command string.
+        :type message: str
+        """
         self.stockfish_process.stdin.write(bytes(f'{message}\n',"utf8"))
         self.stockfish_process.stdin.flush()  
         self.debug_print(f"WROTE:{message}")
+
     def read_stdout(self):
+        """Read a single line from Stockfish stdout.
+
+        :return: Raw bytes line from Stockfish.
+        :rtype: bytes
+        """
         line = self.stockfish_process.stdout.readline()
         self.debug_print(f"READ:{line}")
         return line
     
     def get_user_move_blocking(self):
+        """Prompt the user for a move via standard input.
+
+        :return: The user's move in UCI algebraic notation.
+        :rtype: str
+        """
         color = "White"
         if(self.cpu_white):
             color = "Black"
@@ -117,6 +144,11 @@ class stockfishTerminalPlay():
         return move
 
     def debug_print(self,message):
+        """Print a debug message if :attr:`debug_mode` is enabled.
+
+        :param message: Message string to print.
+        :type message: str
+        """
         if(self.debug_mode):
             print(f"DEBUG->{message}\n")
 

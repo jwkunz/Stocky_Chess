@@ -1,3 +1,5 @@
+"""Main PyQt6 application window, dialogs, chess clocks, and event loop for Stocky Chess."""
+
 from PyQt6 import QtWidgets, uic
 from PyQt6.QtWidgets import QDialog,QLabel,QTextEdit,QVBoxLayout,QPushButton,QHBoxLayout,QRadioButton,QSpinBox,QTimeEdit,QCheckBox
 from PyQt6.QtCore import Qt,QTimer
@@ -13,9 +15,22 @@ from math import ceil
 
 loopTimeMS = 100
 
+
 class Ui(QtWidgets.QMainWindow):
+    """Main window controller for the Stocky Chess desktop application.
+
+    Loads the Qt Designer UI from ``resources/StockyChess.ui``, initializes the
+    board widget, manages player types (Human or Stockfish), runs the chess clocks,
+    and coordinates user and engine moves.
+
+    :cvar version: Application version string.
+    :vartype version: str
+    """
+
     version = "1.0.0"
+
     def __init__(self):
+        """Initialize the main window, board widget, signal connections, and default game state."""
         super(Ui, self).__init__()
         # Load the User Interface
         uic.loadUi('resources/StockyChess.ui', self) 
@@ -71,6 +86,11 @@ class Ui(QtWidgets.QMainWindow):
 
     # Dialog for time control settings
     def setTimeControlMode(self,color : str):
+        """Open a modal dialog to configure initial clock time and increment for a player.
+
+        :param color: Player color code (``'w'`` or ``'b'``).
+        :type color: str
+        """
         # Make Dialog asking a piece selection
         dlg = QDialog(self)
 
@@ -155,11 +175,21 @@ class Ui(QtWidgets.QMainWindow):
 
     # Flips board direction
     def setBoardDirection(self,direction : bool):
+        """Set the board orientation and re-render.
+
+        :param direction: ``True`` for White at the bottom, ``False`` for Black at the bottom.
+        :type direction: bool
+        """
         self.chessBoardWidget.white_bottom = direction
         self.render()
 
     # Set as human player
     def setHuman(self,color : str):
+        """Configure the specified side to be controlled by a human player.
+
+        :param color: Player color code (``'w'`` or ``'b'``).
+        :type color: str
+        """
         if(color == "w"):
             self.whiteEngine = None
             self.whiteType.setText("HUMAN")
@@ -169,7 +199,11 @@ class Ui(QtWidgets.QMainWindow):
 
     # Set as stockfish player
     def setStockfish(self,color : str):
+        """Open a dialog to configure Stockfish skill level and depth for the given side.
 
+        :param color: Player color code (``'w'`` or ``'b'``).
+        :type color: str
+        """
         # Make Dialog asking a piece selection
         dlg = QDialog(self)
         dlg.setWindowTitle("Stockfish:")
@@ -219,6 +253,11 @@ class Ui(QtWidgets.QMainWindow):
     # The updateBoard flag can be used bypass a chessBoard redraw if 
     # another object already handled that process.  For example, moves, promotions etc...
     def render(self, updateBoard = True):
+        """Refresh the board display, FEN bar, turn slider, and material counts.
+
+        :param updateBoard: When ``True``, redraws the board pixmap before updating the scene.
+        :type updateBoard: bool
+        """
         renderGame = self.gameLog.getGameByIndex(self.gameRenderIndex)
         if(updateBoard):
             self.chessBoardWidget.renderBoard(renderGame)
@@ -231,6 +270,7 @@ class Ui(QtWidgets.QMainWindow):
 
     # Starts a new game
     def startNewGame(self):
+        """Reset the game log, click state machine, and clocks for a new game."""
         self.gameLog = gameLog()    
         self.gameLog.reset()
         self.gameRenderIndex = 0
@@ -247,6 +287,7 @@ class Ui(QtWidgets.QMainWindow):
 
     # Update the material counts
     def updateMaterial(self):
+        """Compute and display active material and point balance for White and Black."""
         material = ["",""]
         count = [0,0]
 
@@ -337,6 +378,11 @@ class Ui(QtWidgets.QMainWindow):
 
     # Updates the marker for who's move
     def update_move_slider(self, turn : str):
+        """Update the UI turn indicator slider based on whose turn it is.
+
+        :param turn: ``'w'`` for White or ``'b'`` for Black.
+        :type turn: str
+        """
         if(turn == 'b'):
             self.moveSlider.setValue(1)
         else:
@@ -344,11 +390,24 @@ class Ui(QtWidgets.QMainWindow):
 
     # Prints to shared console
     def print_to_console(self,s : str):
+        """Append a message line to the shared console widget.
+
+        :param s: Message text to append.
+        :type s: str
+        """
         self.printConsole.append(s)
 
     # Moves piece and updates narrations
     def movePieceWithAnimation(self,move : chessMove, cs : chessState, filterForCheck = True):
-               
+        """Log move narration, update player clocks, and apply the move to ``cs``.
+
+        :param move: Move descriptor to execute.
+        :type move: chessMove
+        :param cs: Board state to mutate.
+        :type cs: chessState
+        :param filterForCheck: Passed through to :func:`chessAdmin.movePiece`.
+        :type filterForCheck: bool
+        """
         [r,c,startLabel] = convertIndex(move.start)
         startPieceName = getPieceTextNameOn(move.start,cs).capitalize()
 
@@ -396,7 +455,11 @@ class Ui(QtWidgets.QMainWindow):
 
     # Handles user clicks and bot moves if event = None
     def boardClick(self, event):
+        """Handle a mouse release event on the board scene or trigger an engine move when ``event`` is ``None``.
 
+        :param event: QGraphicsSceneMouseEvent for human clicks, or ``None`` for engine turns.
+        :type event: QtWidgets.QGraphicsSceneMouseEvent | None
+        """
         # Forking a game branch
         tempLog = copy.deepcopy(self.gameLog)
         tempGame = copy.deepcopy(tempLog.currentGame())
@@ -430,6 +493,7 @@ class Ui(QtWidgets.QMainWindow):
 
     # Handles checkmates
     def checkmateCallback(self):
+        """Display a modal notification dialog announcing checkmate."""
         # Make Dialog asking a piece selection
         dlg = QDialog(self)
         dlg.setWindowTitle(" ")
@@ -440,6 +504,7 @@ class Ui(QtWidgets.QMainWindow):
 
     # Handles stalemates
     def stalemateCallback(self):
+        """Display a modal notification dialog announcing stalemate."""
         # Make Dialog asking a piece selection
         dlg = QDialog(self)
         dlg.setWindowTitle(" ")
@@ -450,6 +515,11 @@ class Ui(QtWidgets.QMainWindow):
 
     # Handles timeouts
     def timeoutCallback(self,color : str):
+        """Transition the game to ``TIMEOUT`` and display an out-of-time dialog.
+
+        :param color: Player color that ran out of time (``'w'`` or ``'b'``).
+        :type color: str
+        """
         self.gameClickHandler.action_state = "TIMEOUT"
         # Make Dialog asking a piece selection
         dlg = QDialog(self)
@@ -461,6 +531,13 @@ class Ui(QtWidgets.QMainWindow):
 
     # GUI to handle promotions
     def promotionCallback(self, is_white : bool):
+        """Display a modal dialog prompting the player to choose a pawn promotion piece.
+
+        :param is_white: ``True`` if the promoting player is White, ``False`` for Black.
+        :type is_white: bool
+        :return: Single-character FEN symbol for the chosen promotion piece.
+        :rtype: str
+        """
         # Make Dialog asking a piece selection
         dlg = QDialog(self)
         dlg.setWindowTitle("Select a promotion piece:")
@@ -525,6 +602,7 @@ class Ui(QtWidgets.QMainWindow):
         return chr(code)
 
     def setFENstate(self):
+        """Open a dialog allowing the user to paste and load a custom FEN string."""
         # Make Dialog asking for string
         dlg = QDialog(self)
         dlg.setWindowTitle("FEN Import")
@@ -555,6 +633,7 @@ class Ui(QtWidgets.QMainWindow):
         dlg.exec()
     
     def setPrevMove(self):
+        """Step backward one ply in the move history log and re-render the board."""
         self.gameRenderIndex -= 1
         if(self.gameRenderIndex < 0):
             self.gameRenderIndex = 0
@@ -563,6 +642,7 @@ class Ui(QtWidgets.QMainWindow):
         return
 
     def setNextMove(self):
+        """Step forward one ply in the move history log and re-render the board."""
         self.gameRenderIndex += 1
         if(self.gameRenderIndex > self.gameLog.getCurrentIndex()):
             self.gameRenderIndex = self.gameLog.getCurrentIndex()
@@ -572,6 +652,13 @@ class Ui(QtWidgets.QMainWindow):
 
     # Write milliseconds
     def writeMS(self,ms : int, turn : str):
+        """Format a millisecond duration as ``HH:MM:SS.d`` and display it on the player's clock.
+
+        :param ms: Remaining time in milliseconds.
+        :type ms: int
+        :param turn: ``'w'`` for White's clock or ``'b'`` for Black's clock.
+        :type turn: str
+        """
         hours =  ms // (1000*60*60)
         minutes = ms // (1000*60) % 60
         seconds = ms // (1000) % 60
@@ -584,6 +671,7 @@ class Ui(QtWidgets.QMainWindow):
 
     # This is the state of the game over time 
     def timerCallback(self):
+        """Periodic timer callback invoked every ``loopTimeMS`` ms to drive bot turns and clocks."""
         self.runtime_ms += loopTimeMS
         # Take action
         match(self.timerState):
@@ -626,11 +714,13 @@ class Ui(QtWidgets.QMainWindow):
                     self.timeControlState = "IDLE"
                     self.timeoutCallback('b')
 
-app = QtWidgets.QApplication(sys.argv)
-window = Ui()
-window.show()
-timer = QTimer()
-timer.setInterval(loopTimeMS)
-timer.timeout.connect(window.timerCallback)
-timer.start()
-app.exec()
+
+if __name__ == "__main__":
+    app = QtWidgets.QApplication(sys.argv)
+    window = Ui()
+    window.show()
+    timer = QTimer()
+    timer.setInterval(loopTimeMS)
+    timer.timeout.connect(window.timerCallback)
+    timer.start()
+    app.exec()
