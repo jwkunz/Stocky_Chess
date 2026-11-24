@@ -160,9 +160,18 @@ class gameClickHandler:
                 promotion = promotion.upper()
             else:
                 promotion = promotion.lower()
+
+        # Match against legal moves from startIndex so castling, en passant, captures, and check flags are preserved
+        selectedMove = None
+        for candidate in getMovesFromSquare(startIndex, cs):
+            if (candidate.end == endIndex) and (candidate.promotionPiece == promotion) and (not candidate.is_check):
+                selectedMove = candidate
+                break
+        if selectedMove is None:
+            selectedMove = chessMove(startIndex, endIndex, is_capture=(cs.pieceList[endIndex] is not None), promotionPiece=promotion)
        
-       # Make Move
-        mainWindow.movePieceWithAnimation(chessMove(startIndex,endIndex,promotionPiece=promotion),cs)
+        # Make Move
+        mainWindow.movePieceWithAnimation(selectedMove,cs)
 
         # Look for game over conditions
         match isGameOver(cs):

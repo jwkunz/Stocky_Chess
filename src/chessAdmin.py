@@ -423,7 +423,10 @@ def movePiece(move : chessMove, cs : chessState, filterForCheck = True):
         else: # Regular pawn move
             cs.enpassant_targets = "-"
     else:
-        cs.half_move += 1
+        if move.is_capture:
+            cs.half_move = 0
+        else:
+            cs.half_move += 1
         # Default get rid of enpassant
         cs.enpassant_targets = "-"
    
