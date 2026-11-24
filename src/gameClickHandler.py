@@ -231,7 +231,9 @@ class gameClickHandler:
             case "WHITE_SELECT_MOVE":
                 # Pick same index to cancel highlighting
                 if(idx == self.action_idx):
-                    cb.renderBoard(cs,self.highlighed_moves)
+                    self.highlighed_moves = []
+                    self.action_idx = None
+                    cb.renderBoard(cs)
                     self.action_state = "WHITE_SELECT_PIECE"       
                 # Change if picking a another white piece
                 elif(clickedPiece != None) and (clickedPiece.isupper()):
@@ -252,8 +254,11 @@ class gameClickHandler:
             case "BLACK_SELECT_MOVE":
                 # Pick same index to cancel highlighting
                 if(idx == self.action_idx):
-                    cb.renderBoard(cs,self.highlighed_moves)                 
-                # Change if picking a another white piece
+                    self.highlighed_moves = []
+                    self.action_idx = None
+                    cb.renderBoard(cs)
+                    self.action_state = "BLACK_SELECT_PIECE"                 
+                # Change if picking a another black piece
                 elif(clickedPiece != None) and (clickedPiece.islower()):
                     self._F1(idx,"BLACK_SELECT_MOVE",cs,cb)  
                 else:      

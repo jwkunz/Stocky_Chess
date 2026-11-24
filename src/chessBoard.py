@@ -47,6 +47,7 @@ class chessBoard_widget(QtWidgets.QLabel):
         self.borderTh = borderTh  
         self.white_bottom = white_bottom    
         self.squareLength = (length - 2*borderTh) // 8
+        self.spriteSheet = QImage("resources/ChessPieces")
 
     def _drawSquare(self, x :int ,y : int, length : int, color :  board_color_t, painter : QPainter):
         """Draw a single filled square on the board.
@@ -114,7 +115,7 @@ class chessBoard_widget(QtWidgets.QLabel):
         :type painter: QPainter
         """
         # Get sprite image
-        I = QImage("resources/ChessPieces")
+        I = self.spriteSheet
         s = int(length * 0.8)
         bx = int(x + (length-s)*0.5)
         by = int(y + (length-s)*0.5)

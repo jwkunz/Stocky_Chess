@@ -27,7 +27,7 @@ class Ui(QtWidgets.QMainWindow):
     :vartype version: str
     """
 
-    version = "1.0.2"
+    version = "1.0.3"
 
     def __init__(self):
         """Initialize the main window, board widget, signal connections, and default game state."""
@@ -123,7 +123,6 @@ class Ui(QtWidgets.QMainWindow):
         it_mn.setMinimum(0)      
         it_mn.setValue(5)  
         hLayout.addWidget(it_mn)
-        dlg.layout.addLayout(hLayout)
         hLayout.addWidget(QLabel("seconds"))
         it_sc = QSpinBox()
         it_sc.setMaximum(59)
@@ -168,6 +167,7 @@ class Ui(QtWidgets.QMainWindow):
                 self.blackMS = timeMS
                 self.blackTimeIncMS = incMS
                 self.blackTimeDecMS = timeDecMS
+            dlg.close()
 
         # Button
         applyButton = QPushButton("Apply")
@@ -283,6 +283,7 @@ class Ui(QtWidgets.QMainWindow):
             self.chessBoardWidget.renderBoard(renderGame)
         fenString =  renderGame.getFENstring()
         self.FENbar.setText(fenString)
+        self.viewport.scene().clear()
         self.viewport.scene().addPixmap(self.chessBoardWidget.pixmap())
         self.update_move_slider(renderGame.turn)
         self.updateMaterial()
@@ -484,8 +485,9 @@ class Ui(QtWidgets.QMainWindow):
         if self.gameClickHandler.action_state in ("CHECKMATE", "STALEMATE", "TIMEOUT"):
             return
 
-        # Forking a game branch
+        # Forking a game branch from the currently rendered move index
         tempLog = copy.deepcopy(self.gameLog)
+        tempLog.pruneAfterIndex(self.gameRenderIndex)
         tempGame = copy.deepcopy(tempLog.currentGame())
 
         # Handle game interaction
@@ -498,7 +500,7 @@ class Ui(QtWidgets.QMainWindow):
             self.gameClickHandler.clickHandler(None,None,tempGame,self.chessBoardWidget, tempLog, self)
         
         # Update log if move
-        if(len(tempLog.log) > len(self.gameLog.log)):
+        if(len(tempLog.log) > self.gameRenderIndex + 1):
             self.gameLog = tempLog
             # Update the gameRenderIndex
             self.gameRenderIndex = self.gameLog.getCurrentIndex()
@@ -643,8 +645,17 @@ class Ui(QtWidgets.QMainWindow):
 
         # Import the string
         def update():
-            FENstr = text.toPlainText()
-            # Currently no error checking....
+            FENstr = text.toPlainText().strip()
+            fields = FENstr.split()
+            if len(fields) != 6:
+                self.print_to_console("Invalid FEN string: expected 6 space-separated fields.")
+                return
+            try:
+                testState = chessState()
+                testState.setFENstring(FENstr)
+            except (IndexError, ValueError) as exc:
+                self.print_to_console(f"Invalid FEN string: {exc}")
+                return
             self.startNewGame()
             self.gameLog.log[self.gameRenderIndex].setFENstring(FENstr)
             if(self.gameLog.currentGame().turn == "w"):
@@ -652,6 +663,7 @@ class Ui(QtWidgets.QMainWindow):
             else:
                 self.gameClickHandler.setWhosTurn(player_t.BLACK)
             self.render(True)
+            dlg.close()
 
         # Layout
         button.pressed.connect(update)
@@ -668,6 +680,8 @@ class Ui(QtWidgets.QMainWindow):
         if(self.gameRenderIndex < 0):
             self.gameRenderIndex = 0
             return
+        rendered = self.gameLog.getGameByIndex(self.gameRenderIndex)
+        self.gameClickHandler.setWhosTurn(player_t.WHITE if rendered.turn == "w" else player_t.BLACK)
         self.render(True)
         return
 
@@ -677,6 +691,8 @@ class Ui(QtWidgets.QMainWindow):
         if(self.gameRenderIndex > self.gameLog.getCurrentIndex()):
             self.gameRenderIndex = self.gameLog.getCurrentIndex()
             return
+        rendered = self.gameLog.getGameByIndex(self.gameRenderIndex)
+        self.gameClickHandler.setWhosTurn(player_t.WHITE if rendered.turn == "w" else player_t.BLACK)
         self.render(True)
         return
 
