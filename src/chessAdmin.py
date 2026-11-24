@@ -1,7 +1,6 @@
 """Core chess rules, move generation, check filtering, and game-over evaluation."""
 
 from chessState import chessState, player_t
-import copy
 
 
 class chessMove:
@@ -15,7 +14,7 @@ class chessMove:
     :vartype is_capture: bool
     :ivar enpassantFlag: Whether the move is a two-square pawn advance or en passant capture.
     :vartype enpassantFlag: bool
-    :ivar is_check: Whether the move directly attacks the opposing king.
+    :ivar is_check: Whether the move directly attacks or delivers check to the opposing king.
     :vartype is_check: bool
     :ivar promotionPiece: FEN character of the promoted piece, or ``''`` if not a promotion.
     :vartype promotionPiece: str
@@ -23,7 +22,16 @@ class chessMove:
     :vartype castleRookSquares: list[int]
     """
 
-    def __init__(self, start : int, end : int, is_capture = False, promotionPiece = "", enpassantFlag = False, is_check = False, castleRookSquares = []):
+    def __init__(
+        self,
+        start: int,
+        end: int,
+        is_capture: bool = False,
+        promotionPiece: str = "",
+        enpassantFlag: bool = False,
+        is_check: bool = False,
+        castleRookSquares: list[int] | None = None,
+    ):
         """Initialize a chess move descriptor.
 
         :param start: Starting board square index (0..63).
@@ -36,23 +44,45 @@ class chessMove:
         :type promotionPiece: str
         :param enpassantFlag: True if the move triggers or executes en passant.
         :type enpassantFlag: bool
-        :param is_check: True if the move targets the opponent's king.
+        :param is_check: True if the move targets or checks the opponent's king.
         :type is_check: bool
         :param castleRookSquares: Rook ``[from_idx, to_idx]`` squares when castling.
-        :type castleRookSquares: list[int]
+        :type castleRookSquares: list[int] | None
         """
         self.start = start
         self.end = end
         self.is_capture = is_capture
-        self.enpassantFlag= enpassantFlag
+        self.enpassantFlag = enpassantFlag
         self.is_check = is_check
         self.promotionPiece = promotionPiece
-        self.castleRookSquares = castleRookSquares
+        self.castleRookSquares = list(castleRookSquares) if castleRookSquares else []
+
+    def to_uci(self) -> str:
+        """Convert this move to a UCI coordinate string (e.g., ``'e2e4'`` or ``'e7e8q'``).
+
+        :return: Lowercase UCI coordinate move string.
+        :rtype: str
+        """
+        _, _, start_label = convertIndex(self.start)
+        _, _, end_label = convertIndex(self.end)
+        promo = self.promotionPiece.lower() if self.promotionPiece else ""
+        return f"{start_label.lower()}{end_label.lower()}{promo}"
+
+    def __eq__(self, other: object) -> bool:
+        """Compare two chessMove instances by coordinates and flags."""
+        if not isinstance(other, chessMove):
+            return False
+        return (
+            self.start == other.start
+            and self.end == other.end
+            and self.promotionPiece == other.promotionPiece
+            and self.is_capture == other.is_capture
+            and self.enpassantFlag == other.enpassantFlag
+            and self.castleRookSquares == other.castleRookSquares
+        )
 
 
-# Gets the square index moving from rank A -> H. 
-# Return 64 if off the board
-def squareUp(idx : int):
+def squareUp(idx: int) -> int:
     """Return the square index one rank up (towards rank 8), or 64 if off the board.
 
     :param idx: Starting square index (0..63).
@@ -60,14 +90,12 @@ def squareUp(idx : int):
     :return: Target square index, or 64 if out of bounds.
     :rtype: int
     """
-    if((idx <= 7) or (idx >= 64)):
+    if idx < 8 or idx >= 64:
         return 64
-    return idx - 8        
+    return idx - 8
 
 
-# Gets the square index moving from rank H -> A. 
-# Return 64 if off the board
-def squareDown(idx : int):
+def squareDown(idx: int) -> int:
     """Return the square index one rank down (towards rank 1), or 64 if off the board.
 
     :param idx: Starting square index (0..63).
@@ -75,14 +103,12 @@ def squareDown(idx : int):
     :return: Target square index, or 64 if out of bounds.
     :rtype: int
     """
-    if(idx >=56):
+    if idx < 0 or idx >= 56:
         return 64
     return idx + 8
 
 
-# Gets the square index moving from file 8 -> 1. 
-# Return 64 if off the board
-def squareLeft(idx : int):
+def squareLeft(idx: int) -> int:
     """Return the square index one file left (towards file A), or 64 if off the board.
 
     :param idx: Starting square index (0..63).
@@ -90,14 +116,12 @@ def squareLeft(idx : int):
     :return: Target square index, or 64 if out of bounds.
     :rtype: int
     """
-    if(idx % 8 == 0):
+    if idx < 0 or idx >= 64 or (idx % 8 == 0):
         return 64
     return idx - 1
 
 
-# Gets the square index moving from file 1 -> 8. 
-# Return 64 if off the board
-def squareRight(idx : int):
+def squareRight(idx: int) -> int:
     """Return the square index one file right (towards file H), or 64 if off the board.
 
     :param idx: Starting square index (0..63).
@@ -105,14 +129,12 @@ def squareRight(idx : int):
     :return: Target square index, or 64 if out of bounds.
     :rtype: int
     """
-    if(idx % 8 == 7):
+    if idx < 0 or idx >= 64 or (idx % 8 == 7):
         return 64
     return idx + 1
 
 
-# Gets the square index moving up then right
-# Return 64 if off the board
-def squareUpRight(idx : int):
+def squareUpRight(idx: int) -> int:
     """Return the square index one step diagonally up-right, or 64 if off the board.
 
     :param idx: Starting square index (0..63).
@@ -121,14 +143,12 @@ def squareUpRight(idx : int):
     :rtype: int
     """
     val = squareRight(idx)
-    if(val >= 64):
-        return val
+    if val >= 64:
+        return 64
     return squareUp(val)
 
 
-# Gets the square index moving up then left
-# Return 64 if off the board
-def squareUpLeft(idx : int):
+def squareUpLeft(idx: int) -> int:
     """Return the square index one step diagonally up-left, or 64 if off the board.
 
     :param idx: Starting square index (0..63).
@@ -137,14 +157,12 @@ def squareUpLeft(idx : int):
     :rtype: int
     """
     val = squareLeft(idx)
-    if(val >= 64):
-        return val
-    return squareUp(val)        
+    if val >= 64:
+        return 64
+    return squareUp(val)
 
 
-# Gets the square index moving down then right
-# Return 64 if off the board
-def squareDownRight(idx : int):
+def squareDownRight(idx: int) -> int:
     """Return the square index one step diagonally down-right, or 64 if off the board.
 
     :param idx: Starting square index (0..63).
@@ -153,14 +171,12 @@ def squareDownRight(idx : int):
     :rtype: int
     """
     val = squareRight(idx)
-    if(val >= 64):
-        return val
+    if val >= 64:
+        return 64
     return squareDown(val)
 
 
-# Gets the square index moving down then left
-# Return 64 if off the board
-def squareDownLeft(idx : int):
+def squareDownLeft(idx: int) -> int:
     """Return the square index one step diagonally down-left, or 64 if off the board.
 
     :param idx: Starting square index (0..63).
@@ -169,18 +185,12 @@ def squareDownLeft(idx : int):
     :rtype: int
     """
     val = squareLeft(idx)
-    if(val >= 64):
-        return val
-    return squareDown(val)        
+    if val >= 64:
+        return 64
+    return squareDown(val)
 
 
-# For a move with given color piece_sprite
-# returns "0" if move is off the board, or invalid
-# returns "1" if a normal move without collision
-# returns '2' if a collision with a same color
-# returns "3" if move collides with opposite color 
-# returns "4" if move collides with opposite king
-def getCollisionType(from_index : int, to_index : int, cs : chessState):
+def getCollisionType(from_index: int, to_index: int, cs: chessState) -> int:
     """Classify the interaction of moving a piece from ``from_index`` to ``to_index``.
 
     :param from_index: Origin square index (0..63).
@@ -193,61 +203,47 @@ def getCollisionType(from_index : int, to_index : int, cs : chessState):
         ``3`` if opposing non-king piece, or ``4`` if opposing king.
     :rtype: int
     """
-    if(cs.pieceList[from_index] == None):
+    if from_index < 0 or from_index >= 64 or cs.pieceList[from_index] is None:
         return 0
-    if(to_index >= 64):
+    if to_index < 0 or to_index >= 64:
         return 0
     from_white = cs.pieceList[from_index].isupper()
-    if(cs.pieceList[to_index] == None):
+    target = cs.pieceList[to_index]
+    if target is None:
         return 1
-    if(cs.pieceList[to_index].isupper() == from_white):
+    if target.isupper() == from_white:
         return 2
-    if(cs.pieceList[to_index].upper() == "K"):
+    if target.upper() == "K":
         return 4
-    else:
-        return 3
+    return 3
 
 
-# Get piece text name
-def getPiecetoTextName(piece):
+def getPiecetoTextName(piece: str | None) -> str | None:
     """Convert a single-character FEN piece symbol into its human-readable English name.
 
     :param piece: Single-character FEN piece code (e.g., ``'P'``, ``'k'``).
-    :type piece: str
+    :type piece: str | None
     :return: Full descriptive piece name (e.g., ``'white pawn'``), or ``None``.
     :rtype: str | None
     """
-    match piece:
-        case "P":
-            return "white pawn"
-        case "B":
-            return "white bishop"
-        case "N":
-            return "white knight"
-        case "R":
-            return "white rook"
-        case "Q":
-            return "white queen"
-        case "K":
-            return "white king"  
-        case "p":
-            return "black pawn"
-        case "b":
-            return "black bishop"
-        case "n":
-            return "black knight"
-        case "r":
-            return "black rook"
-        case "q":
-            return "black queen"
-        case "k":
-            return "black king"                                                                        
-        case _:
-            None
+    names = {
+        "P": "white pawn",
+        "B": "white bishop",
+        "N": "white knight",
+        "R": "white rook",
+        "Q": "white queen",
+        "K": "white king",
+        "p": "black pawn",
+        "b": "black bishop",
+        "n": "black knight",
+        "r": "black rook",
+        "q": "black queen",
+        "k": "black king",
+    }
+    return names.get(piece)
 
 
-# Get text name on square
-def getPieceTextNameOn(idx, cs : chessState):
+def getPieceTextNameOn(idx: int, cs: chessState) -> str | None:
     """Return the human-readable name of the piece on ``idx``, or ``None`` if empty.
 
     :param idx: Board square index (0..63).
@@ -257,13 +253,12 @@ def getPieceTextNameOn(idx, cs : chessState):
     :return: Descriptive piece name or ``None``.
     :rtype: str | None
     """
-    if(cs.pieceList[idx] == None):
+    if idx < 0 or idx >= 64 or cs.pieceList[idx] is None:
         return None
     return getPiecetoTextName(cs.pieceList[idx])
 
 
-# Takes a square label and returns the (col,row,index)
-def convertLabel(label : str):
+def convertLabel(label: str) -> tuple[int, int, int]:
     """Convert an algebraic square label (e.g., ``'e4'``) to ``(col, row, index)``.
 
     :param label: Two-character algebraic coordinate.
@@ -271,13 +266,12 @@ def convertLabel(label : str):
     :return: Tuple ``(col, row, index)`` where ``index`` is in 0..63.
     :rtype: tuple[int, int, int]
     """
-    col = ord(label[0].upper())-65
-    row = 7-(ord(label[1].upper())-49) # One indexed
-    return (col,row,row*8 + col)
+    col = ord(label[0].upper()) - 65
+    row = 7 - (ord(label[1].upper()) - 49)
+    return (col, row, row * 8 + col)
 
 
-# Index to (col,row, label)
-def convertIndex(index : int):
+def convertIndex(index: int) -> tuple[int, int, str]:
     """Convert a 0..63 board index to ``(col, row, label)``.
 
     :param index: Board square index (0..63).
@@ -285,14 +279,13 @@ def convertIndex(index : int):
     :return: Tuple ``(col, row, label)`` where ``label`` is uppercase algebraic (e.g., ``'E4'``).
     :rtype: tuple[int, int, str]
     """
-    row = 7-(index // 8)
+    row = 7 - (index // 8)
     col = index % 8
-    label = f"{chr(col+65)}{chr(row+48+1)}" # One indexed
-    return (col,row,label)
+    label = f"{chr(col + 65)}{chr(row + 49)}"
+    return (col, row, label)
 
 
-# Index to (index, label)
-def convertColRow(col : int, row : int):
+def convertColRow(col: int, row: int) -> tuple[int, str]:
     """Convert 0-based ``(col, row)`` indices to ``(index, label)``.
 
     :param col: File index (0..7).
@@ -302,69 +295,180 @@ def convertColRow(col : int, row : int):
     :return: Tuple ``(index, label)``.
     :rtype: tuple[int, str]
     """
-    label = f"{chr(col+65)}{chr((7-row)+48+1)}" # One indexed
-    return (row*8+col,label)
+    label = f"{chr(col + 65)}{chr((7 - row) + 49)}"
+    return (row * 8 + col, label)
 
 
-# Evaluates whether the given chessState has king collision
-# True = the cs.turn king is under check form the !cs.turn
-def hasKingCollision(cs : chessState):
-    """Determine whether the active player's king (``cs.turn``) is currently under attack.
+def isSquareAttacked(square: int, by_white: bool, cs: chessState) -> bool:
+    """Determine whether ``square`` is attacked by any piece of color ``by_white``.
 
-    :param cs: Chess state to evaluate.
+    Checks pawn diagonal attacks, knight jumps, king adjacency, and sliding rays
+    (bishops/rooks/queens) directly without recursive move generation.
+
+    :param square: Target square index (0..63).
+    :type square: int
+    :param by_white: ``True`` to test if White attacks ``square``, ``False`` for Black.
+    :type by_white: bool
+    :param cs: Current board state.
     :type cs: chessState
-    :return: ``True`` if the side to move is in check or adjacent to the enemy king.
+    :return: ``True`` if ``square`` is attacked by ``by_white``.
     :rtype: bool
     """
-    is_white = (cs.turn == 'w')
-    for idx,piece in enumerate(cs.pieceList):
-        # If opposite color 
-        if (piece != None) and (piece.isupper() != is_white):
-            if(piece.upper() == "K"): # Avoid kissing kings by looking for collisions with other king
-                # For surrounding indexes
-                for i in [squareUp(idx),squareUpLeft(idx),squareLeft(idx),squareDownLeft(idx),squareDown(idx),squareDownRight(idx),squareRight(idx),squareUpRight(idx)]:
-                    # Out of bounds
-                    if(i == 64):
-                        continue
-                    # Look for contact with other king
-                    p = cs.pieceList[i]
-                    if(p != None) and (p.upper() == "K"):
-                        return True   # Collision                
-            else:  # If not a king, can make call to get moves and look for check
-                moves = getMovesFromSquare(idx,cs,False)
-                for m in moves:
-                    if(m.is_check):
-                        return True # Collision
+    if square < 0 or square >= 64:
+        return False
+
+    # 1. Pawn attacks: a white pawn attacks upward (so it sits one rank down-left or down-right from target)
+    if by_white:
+        for attacker_sq in (squareDownLeft(square), squareDownRight(square)):
+            if attacker_sq < 64 and cs.pieceList[attacker_sq] == "P":
+                return True
+    else:
+        for attacker_sq in (squareUpLeft(square), squareUpRight(square)):
+            if attacker_sq < 64 and cs.pieceList[attacker_sq] == "p":
+                return True
+
+    # 2. Knight attacks
+    knight_char = "N" if by_white else "n"
+    knight_steps = (
+        squareUp(squareUpLeft(square)),
+        squareUp(squareUpRight(square)),
+        squareLeft(squareUpLeft(square)),
+        squareLeft(squareDownLeft(square)),
+        squareDown(squareDownLeft(square)),
+        squareDown(squareDownRight(square)),
+        squareRight(squareUpRight(square)),
+        squareRight(squareDownRight(square)),
+    )
+    for sq in knight_steps:
+        if sq < 64 and cs.pieceList[sq] == knight_char:
+            return True
+
+    # 3. King attacks
+    king_char = "K" if by_white else "k"
+    king_steps = (
+        squareUp(square),
+        squareUpLeft(square),
+        squareLeft(square),
+        squareDownLeft(square),
+        squareDown(square),
+        squareDownRight(square),
+        squareRight(square),
+        squareUpRight(square),
+    )
+    for sq in king_steps:
+        if sq < 64 and cs.pieceList[sq] == king_char:
+            return True
+
+    # 4. Orthogonal rays (Rook / Queen)
+    rook_chars = ("R", "Q") if by_white else ("r", "q")
+    for step_fn in (squareUp, squareDown, squareLeft, squareRight):
+        curr = step_fn(square)
+        while curr < 64:
+            piece = cs.pieceList[curr]
+            if piece is not None:
+                if piece in rook_chars:
+                    return True
+                break
+            curr = step_fn(curr)
+
+    # 5. Diagonal rays (Bishop / Queen)
+    bishop_chars = ("B", "Q") if by_white else ("b", "q")
+    for step_fn in (squareUpLeft, squareUpRight, squareDownLeft, squareDownRight):
+        curr = step_fn(square)
+        while curr < 64:
+            piece = cs.pieceList[curr]
+            if piece is not None:
+                if piece in bishop_chars:
+                    return True
+                break
+            curr = step_fn(curr)
 
     return False
 
 
-# Look for 0 = not over, 1 = checkmate, 2 = stalemate
-def isGameOver(cs : chessState):
-    """Check whether the current position is checkmate, stalemate, or ongoing.
+def hasKingCollision(cs: chessState) -> bool:
+    """Determine whether the active player's king (``cs.turn``) is currently under attack.
+
+    :param cs: Chess state to evaluate.
+    :type cs: chessState
+    :return: ``True`` if the side to move is in check.
+    :rtype: bool
+    """
+    is_white = cs.turn == "w"
+    king_char = "K" if is_white else "k"
+    for idx, piece in enumerate(cs.pieceList):
+        if piece == king_char:
+            return isSquareAttacked(idx, not is_white, cs)
+    return False
+
+
+def hasInsufficientMaterial(cs: chessState) -> bool:
+    """Return ``True`` if neither side has sufficient material to deliver checkmate.
+
+    Detects K vs K, K+N vs K, K+B vs K, and K+B vs K+B on the same square color.
+
+    :param cs: Board state to inspect.
+    :type cs: chessState
+    :return: ``True`` if position is a dead draw by insufficient material.
+    :rtype: bool
+    """
+    non_kings = [(idx, p) for idx, p in enumerate(cs.pieceList) if p is not None and p.upper() != "K"]
+    if not non_kings:
+        return True
+    if len(non_kings) == 1:
+        _, piece = non_kings[0]
+        if piece.upper() in ("N", "B"):
+            return True
+    if len(non_kings) == 2:
+        (idx1, p1), (idx2, p2) = non_kings
+        if p1.upper() == "B" and p2.upper() == "B" and (p1.isupper() != p2.isupper()):
+            color1 = (idx1 // 8 + idx1 % 8) % 2
+            color2 = (idx2 // 8 + idx2 % 8) % 2
+            if color1 == color2:
+                return True
+    return False
+
+
+def isGameOver(cs: chessState) -> int:
+    """Check whether the current position is checkmate, stalemate/draw, or ongoing.
 
     :param cs: Chess state to evaluate for the side to move.
     :type cs: chessState
-    :return: ``0`` if legal moves exist, ``1`` for checkmate, or ``2`` for stalemate.
+    :return: ``0`` if legal moves exist, ``1`` for checkmate, or ``2`` for stalemate/draw.
     :rtype: int
     """
-    # If at least one move is possible
-    is_white = (cs.turn == 'w')
-    for idx,piece in enumerate(cs.pieceList):
-        # If opposite color and not a king
-        if (piece != None) and (piece.isupper() == is_white):
-            moves = getMovesFromSquare(idx,cs,True)
-            if(len(moves) > 0):
+    if cs.half_move >= 100 or hasInsufficientMaterial(cs):
+        return 2
+
+    is_white = cs.turn == "w"
+    for idx, piece in enumerate(cs.pieceList):
+        if piece is not None and (piece.isupper() == is_white):
+            moves = getMovesFromSquare(idx, cs, True)
+            if len(moves) > 0:
                 return 0
-    # Now look for stalemate
-    if(hasKingCollision(cs)):
-        return 1 # Checkmate
-    else:
-        return 2 # Stalemate
+
+    if hasKingCollision(cs):
+        return 1
+    return 2
 
 
-# Moves a piece and toggles the turn
-def movePiece(move : chessMove, cs : chessState, filterForCheck = True):
+def getAllLegalMoves(cs: chessState) -> list[chessMove]:
+    """Return all legal moves available for the active player in ``cs``.
+
+    :param cs: Current board state.
+    :type cs: chessState
+    :return: List of all legal :class:`chessMove` objects.
+    :rtype: list[chessMove]
+    """
+    is_white = cs.turn == "w"
+    moves: list[chessMove] = []
+    for idx, piece in enumerate(cs.pieceList):
+        if piece is not None and (piece.isupper() == is_white):
+            moves.extend(getMovesFromSquare(idx, cs, True))
+    return moves
+
+
+def movePiece(move: chessMove, cs: chessState, filterForCheck: bool = True):
     """Apply a move to the given :class:`chessState.chessState` in place and advance the turn.
 
     Updates piece locations, castling rooks, pawn promotions, en passant targets/captures,
@@ -377,79 +481,72 @@ def movePiece(move : chessMove, cs : chessState, filterForCheck = True):
     :param filterForCheck: Unused flag retained for API compatibility.
     :type filterForCheck: bool
     """
-    # Is a promotion, or normal / castle move
+    moving_piece = cs.pieceList[move.start]
+    target_piece = cs.pieceList[move.end]
+    is_capture = move.is_capture or (target_piece is not None)
+
     was_white_castle = False
     was_black_castle = False
-    if(move.promotionPiece == ""):
-        if(len(move.castleRookSquares) == 0):
-            # Normal move
-            cs.pieceList[move.end] = cs.pieceList[move.start]
+    if move.promotionPiece == "":
+        if len(move.castleRookSquares) == 0:
+            cs.pieceList[move.end] = moving_piece
         else:
-            # Castle move
-            cs.pieceList[move.end] = cs.pieceList[move.start]
+            cs.pieceList[move.end] = moving_piece
             cs.pieceList[move.castleRookSquares[1]] = cs.pieceList[move.castleRookSquares[0]]
             cs.pieceList[move.castleRookSquares[0]] = None
-            if(cs.turn == "w"):
+            if cs.turn == "w":
                 was_white_castle = True
             else:
                 was_black_castle = True
     else:
-        # Promotion
         cs.pieceList[move.end] = move.promotionPiece
-        # Half move is 0
         cs.half_move = 0
 
-    # Remove start
     cs.pieceList[move.start] = None
-    # Toggle a turn
     cs.toggle_turn()
-    # Half moves for pawn
-    if(cs.pieceList[move.end].upper() == "P"):
+
+    if moving_piece is not None and moving_piece.upper() == "P":
         cs.half_move = 0
-        # This initiate enpassant
-        if(move.enpassantFlag and (not move.is_capture)):
-            if(cs.pieceList[move.end] == 'p'):
-                (col,row,label) = convertIndex(squareUp(move.end))
+        if move.enpassantFlag and not is_capture:
+            if moving_piece == "p":
+                _, _, label = convertIndex(squareUp(move.end))
                 cs.enpassant_targets = label
             else:
-                (col,row,label) = convertIndex(squareDown(move.end))
+                _, _, label = convertIndex(squareDown(move.end))
                 cs.enpassant_targets = label
-        elif(move.enpassantFlag and (move.is_capture)): # This is an en passant capture
-            if(cs.pieceList[move.end] == 'p'):
+        elif move.enpassantFlag and is_capture:
+            if moving_piece == "p":
                 cs.pieceList[squareUp(move.end)] = None
             else:
                 cs.pieceList[squareDown(move.end)] = None
             cs.enpassant_targets = "-"
-        else: # Regular pawn move
+        else:
             cs.enpassant_targets = "-"
     else:
-        if move.is_capture:
+        if is_capture or move.promotionPiece != "":
             cs.half_move = 0
         else:
             cs.half_move += 1
-        # Default get rid of enpassant
         cs.enpassant_targets = "-"
-   
-    # Toggle castle flags if necessary
-    if(cs.pieceList[move.end] == "K") or was_white_castle:
+
+    # Update castling rights when kings or rooks move
+    if cs.pieceList[move.end] == "K" or was_white_castle or move.start == 60:
         cs.castle_white_king = False
         cs.castle_white_queen = False
-    elif(cs.pieceList[move.end] == "R"):
-        if(move.start == 56):
-            cs.castle_white_queen = False
-        elif(move.start == 63):
-            cs.castle_white_king = False
+    elif move.start == 56:
+        cs.castle_white_queen = False
+    elif move.start == 63:
+        cs.castle_white_king = False
 
-    elif(cs.pieceList[move.end] == "k") or was_black_castle:
+    if cs.pieceList[move.end] == "k" or was_black_castle or move.start == 4:
         cs.castle_black_king = False
         cs.castle_black_queen = False
-    elif(cs.pieceList[move.end] == "r"):
-        if(move.start == 0):
-            cs.castle_black_queen = False
-        elif(move.start == 7):
-            cs.castle_black_king = False
+    elif move.start == 0:
+        cs.castle_black_queen = False
+    elif move.start == 7:
+        cs.castle_black_king = False
 
-    # Revoke castling rights if a rook's starting square is captured/occupied
+    # Revoke castling rights if a rook's starting square is captured
     if move.end == 56:
         cs.castle_white_queen = False
     elif move.end == 63:
@@ -460,30 +557,31 @@ def movePiece(move : chessMove, cs : chessState, filterForCheck = True):
         cs.castle_black_king = False
 
 
-# Looks for check after a move is made
-def filterCheckResolve(moveList : list, cs : chessState):
+def filterCheckResolve(moveList: list[chessMove], cs: chessState) -> list[chessMove]:
     """Filter out candidate moves that leave the moving player's own king in check.
+
+    Also removes pseudo-moves that capture the opposing king directly.
 
     :param moveList: Candidate moves to test.
     :type moveList: list[chessMove]
     :param cs: Current board state prior to the move.
     :type cs: chessState
-    :return: Subset of ``moveList`` that does not leave the player in check.
+    :return: Subset of ``moveList`` that are legal.
     :rtype: list[chessMove]
     """
-    filteredResults = []
+    filteredResults: list[chessMove] = []
     for move in moveList:
-        pretendGame = copy.deepcopy(cs)
-        movePiece(move,pretendGame,False)
+        if cs.pieceList[move.end] is not None and cs.pieceList[move.end].upper() == "K":
+            continue
+        pretendGame = cs.copy()
+        movePiece(move, pretendGame, False)
         pretendGame.toggle_turn()
-        in_check = hasKingCollision(pretendGame)
-        if(not in_check):
+        if not hasKingCollision(pretendGame):
             filteredResults.append(move)
     return filteredResults
 
 
-# Moves for a pawn.  Returns a list of chessMove (or empty list)
-def getPawnMoves(startIndex : int, cs : chessState, filterForCheck = True):
+def getPawnMoves(startIndex: int, cs: chessState, filterForCheck: bool = True) -> list[chessMove]:
     """Generate candidate or legal moves for a pawn at ``startIndex``.
 
     :param startIndex: Square index of the pawn (0..63).
@@ -495,9 +593,10 @@ def getPawnMoves(startIndex : int, cs : chessState, filterForCheck = True):
     :return: List of pawn moves.
     :rtype: list[chessMove]
     """
-    result = []
+    result: list[chessMove] = []
+    is_white = cs.pieceList[startIndex].isupper()
 
-    if(cs.pieceList[startIndex].isupper()):
+    if is_white:
         advanceMove = squareUp
         advanceLeftMove = squareUpLeft
         advanceRightMove = squareUpRight
@@ -508,108 +607,75 @@ def getPawnMoves(startIndex : int, cs : chessState, filterForCheck = True):
         advanceRightMove = squareDownRight
         initialRow = 6
 
-    def considerPromotion (startIndex : int, endIndex : int, cs : chessState, is_capture = False):
-        result = []
-        (endCol,endRow,endLabel) = convertIndex(endIndex)
-        if(cs.pieceList[startIndex].isupper()):
-            if(endRow == 7):
-                result.append(chessMove(startIndex,endIndex,is_capture=is_capture,promotionPiece="Q"))
-                result.append(chessMove(startIndex,endIndex,is_capture=is_capture,promotionPiece="R"))
-                result.append(chessMove(startIndex,endIndex,is_capture=is_capture,promotionPiece="B"))
-                result.append(chessMove(startIndex,endIndex,is_capture=is_capture,promotionPiece="N"))
-        else:
-            if(endRow == 0):
-                result.append(chessMove(startIndex,endIndex,is_capture=is_capture,promotionPiece="q"))
-                result.append(chessMove(startIndex,endIndex,is_capture=is_capture,promotionPiece="r"))
-                result.append(chessMove(startIndex,endIndex,is_capture=is_capture,promotionPiece="b"))
-                result.append(chessMove(startIndex,endIndex,is_capture=is_capture,promotionPiece="n"))     
-        return result       
+    def considerPromotion(s_idx: int, e_idx: int, is_capture: bool = False) -> list[chessMove]:
+        promos: list[chessMove] = []
+        _, endRow, _ = convertIndex(e_idx)
+        if is_white and endRow == 7:
+            for p in ("Q", "R", "B", "N"):
+                promos.append(chessMove(s_idx, e_idx, is_capture=is_capture, promotionPiece=p))
+        elif (not is_white) and endRow == 0:
+            for p in ("q", "r", "b", "n"):
+                promos.append(chessMove(s_idx, e_idx, is_capture=is_capture, promotionPiece=p))
+        return promos
 
-    def considerDiagonal(startIndex : int, cs : chessState, move):
-        result = []
-        endIndex = move(startIndex)
-        (col,row,label) = convertIndex(endIndex)
-        is_enpassant_flag = False
-        if(label == cs.enpassant_targets):
-            collisionType = 3
-            is_enpassant_flag = True
-        else:
-            collisionType = getCollisionType(startIndex,endIndex,cs)
-        fwdIdex = 64
-        match collisionType:
-            case 0: # Invalid
-                None
-            case 1: # Normal
-                None
-            case 2: # Same color
-                None
-            case 3: # Opposite color
-                promotions = considerPromotion(startIndex,endIndex,cs,is_capture=True)
-                if len(promotions) > 0:
-                    result.extend(promotions)
-                else:
-                    result.append(chessMove(startIndex,endIndex,is_capture=True,enpassantFlag=is_enpassant_flag))
-            case 4: # Opposite King
-                result.append(chessMove(startIndex,endIndex,is_check=True))
-        return result
-
-    (startCol,startRow,startLabel) = convertIndex(startIndex)
-
-    # Forward advance
-    endIndex = advanceMove(startIndex)
-    collisionType = getCollisionType(startIndex,endIndex,cs)
-    fwdIdex = 64
-    match collisionType:
-        case 0: # Invalid
-            None
-        case 1: # Normal
-            promotions = considerPromotion(startIndex,endIndex,cs,is_capture=False)
-            if len(promotions) > 0:
-                result.extend(promotions)
+    def considerDiagonal(s_idx: int, step_fn) -> list[chessMove]:
+        diag_moves: list[chessMove] = []
+        e_idx = step_fn(s_idx)
+        if e_idx >= 64:
+            return diag_moves
+        _, _, label = convertIndex(e_idx)
+        is_ep = False
+        if label == cs.enpassant_targets.upper() and cs.enpassant_targets != "-":
+            ep_pawn_sq = squareDown(e_idx) if is_white else squareUp(e_idx)
+            expected_enemy_pawn = "p" if is_white else "P"
+            if ep_pawn_sq < 64 and cs.pieceList[ep_pawn_sq] == expected_enemy_pawn:
+                collisionType = 3
+                is_ep = True
             else:
-                result.append(chessMove(startIndex,endIndex))
-            fwdIdex = endIndex # Mark this forward
-        case 2: # Same color
-            None
-        case 3: # Opposite color
-            None
-        case 4: # Opposite King
-            None
+                collisionType = getCollisionType(s_idx, e_idx, cs)
+        else:
+            collisionType = getCollisionType(s_idx, e_idx, cs)
 
-    # Second forward advance
-    if(startRow == initialRow) and (fwdIdex != 64):
-        endIndex = advanceMove(fwdIdex) # Move twice from fwdIdx
-        collisionType = getCollisionType(startIndex,endIndex,cs)
-        match collisionType:
-            case 0: # Invalid
-                None
-            case 1: # Normal
-                # Move forward, mark en passant
-                result.append(chessMove(startIndex,endIndex,enpassantFlag=True))
-            case 2: # Same color
-                None
-            case 3: # Opposite color
-                None
-            case 4: # Opposite King
-                None
+        if collisionType == 3:
+            promos = considerPromotion(s_idx, e_idx, is_capture=True)
+            if promos:
+                diag_moves.extend(promos)
+            else:
+                diag_moves.append(chessMove(s_idx, e_idx, is_capture=True, enpassantFlag=is_ep))
+        elif collisionType == 4:
+            diag_moves.append(chessMove(s_idx, e_idx, is_check=True))
+        return diag_moves
 
-    # Look at normal captures
-        
-    # Forward Left advance
-    result.extend(considerDiagonal(startIndex,cs,advanceLeftMove))
-    # Forward Right advance
-    result.extend(considerDiagonal(startIndex,cs,advanceRightMove))
+    _, startRow, _ = convertIndex(startIndex)
 
-    # Guard against recursion
-    if(filterForCheck):
-        # If in check, filter moves that don't resolve it
-        return filterCheckResolve(result,cs)
-    else:
-        return result
+    # Single step forward
+    endIndex = advanceMove(startIndex)
+    collisionType = getCollisionType(startIndex, endIndex, cs)
+    fwdIdx = 64
+    if collisionType == 1:
+        promos = considerPromotion(startIndex, endIndex, is_capture=False)
+        if promos:
+            result.extend(promos)
+        else:
+            result.append(chessMove(startIndex, endIndex))
+        fwdIdx = endIndex
+
+    # Double step forward from starting rank
+    if startRow == initialRow and fwdIdx != 64:
+        endIndex2 = advanceMove(fwdIdx)
+        if getCollisionType(startIndex, endIndex2, cs) == 1:
+            result.append(chessMove(startIndex, endIndex2, enpassantFlag=True))
+
+    # Captures
+    result.extend(considerDiagonal(startIndex, advanceLeftMove))
+    result.extend(considerDiagonal(startIndex, advanceRightMove))
+
+    if filterForCheck:
+        return filterCheckResolve(result, cs)
+    return result
 
 
-# Moves for a knight.  Returns a list of chessMove (or empty list)
-def getKnightMoves(startIndex : int, cs : chessState, filterForCheck = True):
+def getKnightMoves(startIndex: int, cs: chessState, filterForCheck: bool = True) -> list[chessMove]:
     """Generate candidate or legal moves for a knight at ``startIndex``.
 
     :param startIndex: Square index of the knight (0..63).
@@ -621,45 +687,33 @@ def getKnightMoves(startIndex : int, cs : chessState, filterForCheck = True):
     :return: List of knight moves.
     :rtype: list[chessMove]
     """
-
-    # Shared code for a knight move
-    def considerKnightMove(move_lambda,startIndex : int, cs : chessState, result : list):
+    result: list[chessMove] = []
+    steps = (
+        lambda x: squareUp(squareUpLeft(x)),
+        lambda x: squareUp(squareUpRight(x)),
+        lambda x: squareLeft(squareUpLeft(x)),
+        lambda x: squareLeft(squareDownLeft(x)),
+        lambda x: squareDown(squareDownLeft(x)),
+        lambda x: squareDown(squareDownRight(x)),
+        lambda x: squareRight(squareUpRight(x)),
+        lambda x: squareRight(squareDownRight(x)),
+    )
+    for move_lambda in steps:
         endIndex = move_lambda(startIndex)
-        collisionType = getCollisionType(startIndex,endIndex,cs)
-        match collisionType:
-            case 0: # Invalid
-                None
-            case 1: # Normal
-                # Move
-                result.append(chessMove(startIndex,endIndex))
-            case 2: # Same color
-                None
-            case 3: # Opposite color
-                result.append(chessMove(startIndex,endIndex,is_capture=True))
-            case 4: # Opposite King
-                result.append(chessMove(startIndex,endIndex,is_check=True))
+        collisionType = getCollisionType(startIndex, endIndex, cs)
+        if collisionType == 1:
+            result.append(chessMove(startIndex, endIndex))
+        elif collisionType == 3:
+            result.append(chessMove(startIndex, endIndex, is_capture=True))
+        elif collisionType == 4:
+            result.append(chessMove(startIndex, endIndex, is_check=True))
 
-    result = []
-    considerKnightMove(lambda x:squareUp(squareUpLeft(x)),startIndex,cs,result)
-    
-    considerKnightMove(lambda x:squareUp(squareUpRight(x)),startIndex,cs,result)
-    considerKnightMove(lambda x:squareLeft(squareUpLeft(x)),startIndex,cs,result)
-    considerKnightMove(lambda x:squareLeft(squareDownLeft(x)),startIndex,cs,result)
-    considerKnightMove(lambda x:squareDown(squareDownLeft(x)),startIndex,cs,result)
-    considerKnightMove(lambda x:squareDown(squareDownRight(x)),startIndex,cs,result)
-    considerKnightMove(lambda x:squareRight(squareUpRight(x)),startIndex,cs,result)
-    considerKnightMove(lambda x:squareRight(squareDownRight(x)),startIndex,cs,result)
-
-    # Guard against recursion
-    if(filterForCheck):
-        # If in check, filter moves that don't resolve it
-        return filterCheckResolve(result,cs)
-    else:
-        return result
+    if filterForCheck:
+        return filterCheckResolve(result, cs)
+    return result
 
 
-# Shared code for moves until stop for bishops, rooks, queens
-def considerBishopRookQueenMove(move_lambda,startIndex : int, cs : chessState, result : list):
+def considerBishopRookQueenMove(move_lambda, startIndex: int, cs: chessState, result: list[chessMove]):
     """Slide along a ray defined by ``move_lambda`` and append reachable moves to ``result``.
 
     :param move_lambda: Step function taking a square index and returning the next square index.
@@ -672,30 +726,23 @@ def considerBishopRookQueenMove(move_lambda,startIndex : int, cs : chessState, r
     :type result: list[chessMove]
     """
     a = startIndex
-    b = a
-    while(True):
+    while True:
         b = move_lambda(a)
-        collisionType = getCollisionType(startIndex,b,cs)
-        match collisionType:
-            case 0: # Invalid
-                return 
-            case 1: # Normal
-                # Move
-                result.append(chessMove(startIndex,b))
-                # Keep going
-                a = b
-            case 2: # Same color
-                return 
-            case 3: # Opposite color
-                result.append(chessMove(startIndex,b,is_capture=True))
-                return 
-            case 4: # Opposite King
-                result.append(chessMove(startIndex,b,is_check=True))
-                return 
+        collisionType = getCollisionType(startIndex, b, cs)
+        if collisionType == 0 or collisionType == 2:
+            return
+        if collisionType == 1:
+            result.append(chessMove(startIndex, b))
+            a = b
+        elif collisionType == 3:
+            result.append(chessMove(startIndex, b, is_capture=True))
+            return
+        elif collisionType == 4:
+            result.append(chessMove(startIndex, b, is_check=True))
+            return
 
 
-# Moves for a bishop.  Returns a list of chessMove (or empty list)
-def getBishopMoves(startIndex : int, cs : chessState, filterForCheck = True):
+def getBishopMoves(startIndex: int, cs: chessState, filterForCheck: bool = True) -> list[chessMove]:
     """Generate candidate or legal moves for a bishop at ``startIndex``.
 
     :param startIndex: Square index of the bishop (0..63).
@@ -707,21 +754,15 @@ def getBishopMoves(startIndex : int, cs : chessState, filterForCheck = True):
     :return: List of bishop moves.
     :rtype: list[chessMove]
     """
-    result = []
-    considerBishopRookQueenMove(squareUpLeft,startIndex,cs,result)
-    considerBishopRookQueenMove(squareDownLeft,startIndex,cs,result)
-    considerBishopRookQueenMove(squareUpRight,startIndex,cs,result)
-    considerBishopRookQueenMove(squareDownRight,startIndex,cs,result)
-    # Guard against recursion
-    if(filterForCheck):
-        # If in check, filter moves that don't resolve it
-        return filterCheckResolve(result,cs)
-    else:
-        return result
+    result: list[chessMove] = []
+    for ray in (squareUpLeft, squareDownLeft, squareUpRight, squareDownRight):
+        considerBishopRookQueenMove(ray, startIndex, cs, result)
+    if filterForCheck:
+        return filterCheckResolve(result, cs)
+    return result
 
 
-# Moves for a rook.  Returns a list of chessMove (or empty list)
-def getRookMoves(startIndex : int, cs : chessState, filterForCheck = True):
+def getRookMoves(startIndex: int, cs: chessState, filterForCheck: bool = True) -> list[chessMove]:
     """Generate candidate or legal moves for a rook at ``startIndex``.
 
     :param startIndex: Square index of the rook (0..63).
@@ -733,22 +774,15 @@ def getRookMoves(startIndex : int, cs : chessState, filterForCheck = True):
     :return: List of rook moves.
     :rtype: list[chessMove]
     """
-    result = []
-    considerBishopRookQueenMove(squareUp,startIndex,cs,result)
-    considerBishopRookQueenMove(squareDown,startIndex,cs,result)
-    considerBishopRookQueenMove(squareRight,startIndex,cs,result)
-    considerBishopRookQueenMove(squareLeft,startIndex,cs,result)
-    # If in check, filter moves that don't resolve it
-    # Guard against recursion
-    if(filterForCheck):
-        # If in check, filter moves that don't resolve it
-        return filterCheckResolve(result,cs)
-    else:
-        return result
+    result: list[chessMove] = []
+    for ray in (squareUp, squareDown, squareRight, squareLeft):
+        considerBishopRookQueenMove(ray, startIndex, cs, result)
+    if filterForCheck:
+        return filterCheckResolve(result, cs)
+    return result
 
 
-# Moves for a queen.  Returns a list of chessMove (or empty list)
-def getQueenMoves(startIndex : int, cs : chessState, filterForCheck = True):
+def getQueenMoves(startIndex: int, cs: chessState, filterForCheck: bool = True) -> list[chessMove]:
     """Generate candidate or legal moves for a queen at ``startIndex``.
 
     :param startIndex: Square index of the queen (0..63).
@@ -760,20 +794,15 @@ def getQueenMoves(startIndex : int, cs : chessState, filterForCheck = True):
     :return: List of queen moves.
     :rtype: list[chessMove]
     """
-    result = []
-    result.extend(getBishopMoves(startIndex,cs,filterForCheck))
-    result.extend(getRookMoves(startIndex,cs,filterForCheck))
-    # If in check, filter moves that don't resolve it
-    # Guard against recursion
-    if(filterForCheck):
-        # If in check, filter moves that don't resolve it
-        return filterCheckResolve(result,cs)
-    else:
-        return result
+    result: list[chessMove] = []
+    result.extend(getBishopMoves(startIndex, cs, False))
+    result.extend(getRookMoves(startIndex, cs, False))
+    if filterForCheck:
+        return filterCheckResolve(result, cs)
+    return result
 
 
-# Moves for a king.  Returns a list of chessMove (or empty list)
-def getKingMoves(startIndex : int, cs : chessState):
+def getKingMoves(startIndex: int, cs: chessState) -> list[chessMove]:
     """Generate legal moves (including castling) for a king at ``startIndex``.
 
     :param startIndex: Square index of the king (0..63).
@@ -783,135 +812,58 @@ def getKingMoves(startIndex : int, cs : chessState):
     :return: List of legal king moves.
     :rtype: list[chessMove]
     """
+    is_white = cs.pieceList[startIndex].isupper()
+    result: list[chessMove] = []
 
-    def isSquareAttackedForKing(kingSquare : int, targetSquare : int, is_white : bool, cs : chessState):
-        pretendGame = copy.deepcopy(cs)
-        pretendGame.turn = "w" if is_white else "b"
-        kingChar = "K" if is_white else "k"
-        pretendGame.pieceList[kingSquare] = None
-        pretendGame.pieceList[targetSquare] = kingChar
-        return hasKingCollision(pretendGame)
-
-    def considerKingSideCastle(startIndex:int, cs:chessState, result : list):
-        # color
-        is_white = cs.pieceList[startIndex].isupper()
-        # Can't be in check
-        if isSquareAttackedForKing(startIndex, startIndex, is_white, cs):
-            return
-        proceed = False
-        # Get eligible squares
-        if(is_white) and (cs.castle_white_king) and (startIndex == 60) and (cs.pieceList[63] == "R"):
-            proceed = True
-            sk = 60
-            s1 = 61
-            s2 = 62
-            sr = 63
-        if(not is_white) and (cs.castle_black_king) and (startIndex == 4) and (cs.pieceList[7] == "r"):
-            proceed = True
-            sk = 4
-            s1 = 5
-            s2 = 6
-            sr = 7
-        if(proceed == False):
-            return
-        
-        # Look for pieces blocking castle
-        if(cs.pieceList[s1] != None) or (cs.pieceList[s2] != None):
-            return
-        
-        # King cannot pass through or land on an attacked square
-        if isSquareAttackedForKing(sk, s1, is_white, cs) or isSquareAttackedForKing(sk, s2, is_white, cs):
-            return
-        
-        # Valid castle
-        result.append(chessMove(sk,s2,castleRookSquares=[sr,s1]))
-            
-    def considerQueenSideCastle(startIndex:int, cs:chessState, result : list):
-        # color
-        is_white = cs.pieceList[startIndex].isupper()
-        # Can't be in check
-        if isSquareAttackedForKing(startIndex, startIndex, is_white, cs):
-            return
-        proceed = False
-        # Get eligible squares
-        if(is_white) and (cs.castle_white_queen) and (startIndex == 60) and (cs.pieceList[56] == "R"):
-            proceed = True
-            sk = 60
-            s1 = 59
-            s2 = 58
-            s3 = 57
-            sr = 56
-        if(not is_white) and (cs.castle_black_queen) and (startIndex == 4) and (cs.pieceList[0] == "r"):
-            proceed = True
-            sk = 4
-            s1 = 3
-            s2 = 2
-            s3 = 1
-            sr = 0
-        if(proceed == False):
-            return
-        
-        # Look for pieces blocking castle (including b1/b8 = s3)
-        if(cs.pieceList[s1] != None) or (cs.pieceList[s2] != None) or (cs.pieceList[s3] != None):
-            return
-        
-        # King cannot pass through or land on an attacked square (s3 and sr may be attacked)
-        if isSquareAttackedForKing(sk, s1, is_white, cs) or isSquareAttackedForKing(sk, s2, is_white, cs):
-            return
-        
-        # Valid castle
-        result.append(chessMove(sk,s2,castleRookSquares=[sr,s1]))
-
-
-    # Consider and individual move
-    def considerKingMove(move, startIndex: int, cs: chessState, result : list):
-        endIndex = move(startIndex)
-        collisionType = getCollisionType(startIndex,endIndex,cs)
-        move = None
-        match collisionType:
-            case 0: # Invalid
-                return 
-            case 1: # Normal
-                # Move
-                move = chessMove(startIndex,endIndex)
-            case 2: # Same color
-                return 
-            case 3: # Opposite color
-                move = chessMove(startIndex,endIndex,is_capture=True) 
-            case 4: # Opposite King
-                return         
-        pretendGame = copy.deepcopy(cs)
-        movePiece(move,pretendGame,False)
+    for step_fn in (
+        squareUp,
+        squareUpLeft,
+        squareLeft,
+        squareDownLeft,
+        squareDown,
+        squareDownRight,
+        squareRight,
+        squareUpRight,
+    ):
+        endIndex = step_fn(startIndex)
+        collisionType = getCollisionType(startIndex, endIndex, cs)
+        if collisionType == 1:
+            candidate = chessMove(startIndex, endIndex)
+        elif collisionType == 3:
+            candidate = chessMove(startIndex, endIndex, is_capture=True)
+        else:
+            continue
+        pretendGame = cs.copy()
+        movePiece(candidate, pretendGame, False)
         pretendGame.toggle_turn()
-        in_check = hasKingCollision(pretendGame)
-        if(not in_check):
-           result.append(move)
+        if not hasKingCollision(pretendGame):
+            result.append(candidate)
 
-    # Coniser all king moves
-    def considerKingMoves(startIndex: int, cs: chessState, result : list): 
-        # Block
-        considerKingMove(squareUp,startIndex,cs,result)
-        considerKingMove(squareUpLeft,startIndex,cs,result)
-        considerKingMove(squareLeft,startIndex,cs,result)
-        considerKingMove(squareDownLeft,startIndex,cs,result)
-        considerKingMove(squareDown,startIndex,cs,result)
-        considerKingMove(squareDownRight,startIndex,cs,result)
-        considerKingMove(squareRight,startIndex,cs,result)
-        considerKingMove(squareUpRight,startIndex,cs,result)
-        # Castle
-        considerKingSideCastle(startIndex,cs,result)
-        considerQueenSideCastle(startIndex,cs,result)
+    # Kingside castling
+    if not isSquareAttacked(startIndex, not is_white, cs):
+        if is_white and cs.castle_white_king and startIndex == 60 and cs.pieceList[63] == "R":
+            if cs.pieceList[61] is None and cs.pieceList[62] is None:
+                if not isSquareAttacked(61, False, cs) and not isSquareAttacked(62, False, cs):
+                    result.append(chessMove(60, 62, castleRookSquares=[63, 61]))
+        elif (not is_white) and cs.castle_black_king and startIndex == 4 and cs.pieceList[7] == "r":
+            if cs.pieceList[5] is None and cs.pieceList[6] is None:
+                if not isSquareAttacked(5, True, cs) and not isSquareAttacked(6, True, cs):
+                    result.append(chessMove(4, 6, castleRookSquares=[7, 5]))
 
-    result = []
-    considerKingMoves(startIndex,cs,result)
+        # Queenside castling
+        if is_white and cs.castle_white_queen and startIndex == 60 and cs.pieceList[56] == "R":
+            if cs.pieceList[59] is None and cs.pieceList[58] is None and cs.pieceList[57] is None:
+                if not isSquareAttacked(59, False, cs) and not isSquareAttacked(58, False, cs):
+                    result.append(chessMove(60, 58, castleRookSquares=[56, 59]))
+        elif (not is_white) and cs.castle_black_queen and startIndex == 4 and cs.pieceList[0] == "r":
+            if cs.pieceList[3] is None and cs.pieceList[2] is None and cs.pieceList[1] is None:
+                if not isSquareAttacked(3, True, cs) and not isSquareAttacked(2, True, cs):
+                    result.append(chessMove(4, 2, castleRookSquares=[0, 3]))
+
     return result
 
 
-# Return a list of valid moves from a given square
-# Each move is tuple with (idx,type_of_move) where 
-# type_of_move can be "X"=capture", "N"=normal, "E"=en passant, 
-# "P"=promotion, "C"=check, or "K,k,Q,q" for castling in that direction
-def getMovesFromSquare(start : int, cs : chessState, filterForCheck = True):
+def getMovesFromSquare(start: int, cs: chessState, filterForCheck: bool = True) -> list[chessMove]:
     """Return all valid moves originating from the ``start`` square.
 
     :param start: Origin square index (0..63).
@@ -923,22 +875,19 @@ def getMovesFromSquare(start : int, cs : chessState, filterForCheck = True):
     :return: List of :class:`chessMove` objects available from ``start``.
     :rtype: list[chessMove]
     """
-    piece = cs.pieceList[start]
-    match piece.upper():
-        case "P":
-            return getPawnMoves(start,cs,filterForCheck)
-        case "N":
-            return getKnightMoves(start,cs,filterForCheck) 
-        case "B":
-            return getBishopMoves(start,cs,filterForCheck)  
-        case "R":
-            return getRookMoves(start,cs,filterForCheck)    
-        case "Q":
-            return getQueenMoves(start,cs,filterForCheck)   
-        case "K":
-            return getKingMoves(start,cs)                                    
-        case _:
-            return []
-    
-if __name__ == "__main__":
-    None
+    if start < 0 or start >= 64 or cs.pieceList[start] is None:
+        return []
+    piece = cs.pieceList[start].upper()
+    if piece == "P":
+        return getPawnMoves(start, cs, filterForCheck)
+    if piece == "N":
+        return getKnightMoves(start, cs, filterForCheck)
+    if piece == "B":
+        return getBishopMoves(start, cs, filterForCheck)
+    if piece == "R":
+        return getRookMoves(start, cs, filterForCheck)
+    if piece == "Q":
+        return getQueenMoves(start, cs, filterForCheck)
+    if piece == "K":
+        return getKingMoves(start, cs)
+    return []
