@@ -27,7 +27,7 @@ class Ui(QtWidgets.QMainWindow):
     :vartype version: str
     """
 
-    version = "1.0.0"
+    version = "1.0.1"
 
     def __init__(self):
         """Initialize the main window, board widget, signal connections, and default game state."""
@@ -275,6 +275,7 @@ class Ui(QtWidgets.QMainWindow):
         self.gameLog.reset()
         self.gameRenderIndex = 0
         self.gameClickHandler.action_state = "WHITE_SELECT_PIECE"
+        self.timerState = "IDLE"
         # Time control mode
         self.timeControlState = "IDLE"
         self.whiteMS = 100*60*60*1000 -1
@@ -460,6 +461,9 @@ class Ui(QtWidgets.QMainWindow):
         :param event: QGraphicsSceneMouseEvent for human clicks, or ``None`` for engine turns.
         :type event: QtWidgets.QGraphicsSceneMouseEvent | None
         """
+        if self.gameClickHandler.action_state in ("CHECKMATE", "STALEMATE", "TIMEOUT"):
+            return
+
         # Forking a game branch
         tempLog = copy.deepcopy(self.gameLog)
         tempGame = copy.deepcopy(tempLog.currentGame())
@@ -482,11 +486,17 @@ class Ui(QtWidgets.QMainWindow):
         self.render(False)
         # Handle end of game message
         if(self.gameClickHandler.action_state == "CHECKMATE"):
+            self.timeControlState = "IDLE"
+            self.timerState = "GAME_OVER"
             # Window action
             self.checkmateCallback()
+            return
         elif(self.gameClickHandler.action_state == "STALEMATE"):
+            self.timeControlState = "IDLE"
+            self.timerState = "GAME_OVER"
             # Window action
             self.stalemateCallback()
+            return
 
         # Set this to let the rendering catch up
         self.timerState = "DRAW_WAIT"
@@ -677,10 +687,11 @@ class Ui(QtWidgets.QMainWindow):
         match(self.timerState):
             # Nothing to do
             case "IDLE":
-                # Look if its the bots turn
-                if((self.gameLog.getLatestGame().turn == "w") and (self.whiteEngine != None)) or ((self.gameLog.getLatestGame().turn == "b") and (self.blackEngine != None)):
-                    # Simulate a None user click to run the game
-                    self.boardClick(None)
+                # Look if its the bots turn and game is still active
+                if self.gameClickHandler.action_state not in ("CHECKMATE", "STALEMATE", "TIMEOUT"):
+                    if((self.gameLog.getLatestGame().turn == "w") and (self.whiteEngine != None)) or ((self.gameLog.getLatestGame().turn == "b") and (self.blackEngine != None)):
+                        # Simulate a None user click to run the game
+                        self.boardClick(None)
             case "ENGINE_RUNNING":
                 # Engine is going, don't do anything
                 None
