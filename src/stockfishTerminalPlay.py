@@ -3,6 +3,8 @@
 from random import randint
 import time
 import subprocess
+import shutil
+import os
 
 ### Use this one to play with in stand alone mode
 
@@ -16,11 +18,19 @@ class stockfishTerminalPlay():
 
     debug_mode = False
 
-    def __init__(self):
+    def __init__(self, path=None):
         """Launch the Stockfish executable and set the initial UCI state."""
         self.debug_print("Initializing Game by Launching Engine...")
+        if path is None:
+            for candidate in ("stockfish", "stockfish.exe", "./stockfish", "./stockfish.exe"):
+                resolved = shutil.which(candidate) or (candidate if os.path.isfile(candidate) else None)
+                if resolved:
+                    path = resolved
+                    break
+            if path is None:
+                path = "stockfish.exe" if os.name == "nt" else "stockfish"
         # Launch the executable in a subprocess
-        self.stockfish_process = subprocess.Popen(['stockfish.exe'], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        self.stockfish_process = subprocess.Popen([path], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
         # Initial state
         self.current_state = "START_UCI"
         self.debug_print("Launched Engine...")
@@ -34,7 +44,7 @@ class stockfishTerminalPlay():
                 next_state = "UCI_RESPONSE"
             case "UCI_RESPONSE":
                 output = self.read_stdout()
-                if(output == b"uciok\r\n"):
+                if(output.strip() == b"uciok"):
                     next_state = "SET_HASH"
             case "SET_HASH":
                 self.write_stdin("setoption name Hash value 32")
@@ -43,7 +53,7 @@ class stockfishTerminalPlay():
                 self.write_stdin("setoption name NalimovCache value 1")
                 next_state = "INIT_TBS_2"
             case "INIT_TBS_2":
-                self.write_stdin("setoption name NalimovPath value d:\tb;c\tb")
+                self.write_stdin(r"setoption name NalimovPath value d:\tb;c\tb")
                 next_state = "SET_UCI_ANALYZE_MODE"
             case "SET_UCI_ANALYZE_MODE":
                 self.write_stdin("setoption name UCI_AnalyseMode value true")
@@ -57,7 +67,7 @@ class stockfishTerminalPlay():
                 next_state = "READY_OK"
             case "READY_OK":
                 output = self.read_stdout()
-                if(output == b"readyok\r\n"):
+                if(output.strip() == b"readyok"):
                     next_state = "NEW_GAME"
             case "NEW_GAME":
                 self.write_stdin("ucinewgame")

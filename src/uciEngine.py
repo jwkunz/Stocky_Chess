@@ -3,6 +3,8 @@
 from random import randint
 import time
 import subprocess
+import shutil
+import os
 
 
 class uciEngine():
@@ -18,16 +20,25 @@ class uciEngine():
     :vartype depth: int
     """
 
-    def __init__(self,path='stockfish.exe',difficulty=20,moveDepth=20):
+    def __init__(self,path=None,difficulty=20,moveDepth=20):
         """Launch Stockfish and run the UCI initialization state machine until ready.
 
-        :param path: Path to the Stockfish executable.
-        :type path: str
+        :param path: Path to the Stockfish executable. Defaults to auto-detecting
+            ``stockfish`` or ``stockfish.exe`` on PATH or in the working directory.
+        :type path: str | None
         :param difficulty: Stockfish Skill Level (1 to 20).
         :type difficulty: int
         :param moveDepth: Search depth in plies.
         :type moveDepth: int
         """
+        if path is None:
+            for candidate in ("stockfish", "stockfish.exe", "./stockfish", "./stockfish.exe"):
+                resolved = shutil.which(candidate) or (candidate if os.path.isfile(candidate) else None)
+                if resolved:
+                    path = resolved
+                    break
+            if path is None:
+                path = "stockfish.exe" if os.name == "nt" else "stockfish"
         # Launch the executable in a subprocess
         self.stockfish_process = subprocess.Popen([path], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
         # Initial state
@@ -39,6 +50,17 @@ class uciEngine():
         # Initialize
         while(self.current_state != "WAITING"):
             self.tick()
+
+    def close(self):
+        """Cleanly terminate the underlying Stockfish subprocess."""
+        if getattr(self, "stockfish_process", None) is not None:
+            if self.stockfish_process.poll() is None:
+                try:
+                    self.write_stdin("quit")
+                    self.stockfish_process.wait(timeout=1.0)
+                except Exception:
+                    self.stockfish_process.terminate()
+            self.stockfish_process = None
 
     def tick(self,args=None):
         """Advance the UCI engine state machine by one step.
@@ -54,7 +76,7 @@ class uciEngine():
                 next_state = "UCI_RESPONSE"
             case "UCI_RESPONSE":
                 output = self.read_stdout()
-                if(output == b"uciok\r\n"):
+                if(output.strip() == b"uciok"):
                     next_state = "SET_HASH"
             case "SET_HASH":
                 self.write_stdin("setoption name Hash value 32")
@@ -63,7 +85,7 @@ class uciEngine():
                 self.write_stdin("setoption name NalimovCache value 1")
                 next_state = "INIT_TBS_2"
             case "INIT_TBS_2":
-                self.write_stdin("setoption name NalimovPath value d:\tb;c\tb")
+                self.write_stdin(r"setoption name NalimovPath value d:\tb;c\tb")
                 next_state = "SET_UCI_ANALYZE_MODE"
             case "SET_UCI_ANALYZE_MODE":
                 self.write_stdin("setoption name UCI_AnalyseMode value true")
@@ -76,7 +98,7 @@ class uciEngine():
                 next_state = "READY_OK"
             case "READY_OK":
                 output = self.read_stdout()
-                if(output == b"readyok\r\n"):
+                if(output.strip() == b"readyok"):
                     next_state = "NEW_GAME"
             case "NEW_GAME":
                 self.write_stdin("ucinewgame")

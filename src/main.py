@@ -27,7 +27,7 @@ class Ui(QtWidgets.QMainWindow):
     :vartype version: str
     """
 
-    version = "1.0.7""
+    version = "1.0.8"
 
     def __init__(self):
         """Initialize the main window, board widget, signal connections, and default game state."""
@@ -196,9 +196,13 @@ class Ui(QtWidgets.QMainWindow):
         :type color: str
         """
         if(color == "w"):
+            if getattr(self, "whiteEngine", None) is not None:
+                self.whiteEngine.close()
             self.whiteEngine = None
             self.whiteType.setText("HUMAN")
         else:
+            if getattr(self, "blackEngine", None) is not None:
+                self.blackEngine.close()
             self.blackEngine = None
             self.blackType.setText("HUMAN")
 
@@ -246,14 +250,32 @@ class Ui(QtWidgets.QMainWindow):
         difficulty = diffDial.value()
         moveDepth = depthDial.value()
 
+        try:
+            newEngine = uciEngine(difficulty=difficulty,moveDepth=moveDepth)
+        except OSError as exc:
+            self.print_to_console(f"Failed to start Stockfish engine: {exc}")
+            return
+
         # Update player box
         if(color == "w"):
-            self.whiteEngine = uciEngine(difficulty=difficulty,moveDepth=moveDepth)
+            if getattr(self, "whiteEngine", None) is not None:
+                self.whiteEngine.close()
+            self.whiteEngine = newEngine
             self.whiteType.setText(f"STOCKFISH LVL {difficulty} DEPTH {moveDepth}")
         else:
-            self.blackEngine = uciEngine(difficulty=difficulty,moveDepth=moveDepth)
+            if getattr(self, "blackEngine", None) is not None:
+                self.blackEngine.close()
+            self.blackEngine = newEngine
             self.blackType.setText(f"STOCKFISH LVL {difficulty} DEPTH {moveDepth}")
         self.setBotPaused(True)
+
+    def closeEvent(self, event):
+        """Cleanly shut down any active Stockfish subprocesses when the window closes."""
+        if getattr(self, "whiteEngine", None) is not None:
+            self.whiteEngine.close()
+        if getattr(self, "blackEngine", None) is not None:
+            self.blackEngine.close()
+        super().closeEvent(event)
 
     def setBotPaused(self, paused : bool):
         """Set the bot pause state and update the Start/Pause button label.
