@@ -16,6 +16,7 @@ from uciEngine import (
     discover_engines,
     download_engine,
     find_engine_binary,
+    get_engines_dir,
     parse_uci_option_line,
     select_release_asset,
     uciEngine,
@@ -216,3 +217,11 @@ def test_discover_engines_and_download_direct_and_archive(tmp_path, monkeypatch)
     assert sf_out.is_file()
     assert os.access(sf_out, os.X_OK)
     assert sf_out.read_bytes() == b"ELF_STOCKFISH_BINARY"
+
+    # Verify default get_engines_dir() points to the universal temp directory and discover_engines() searches it
+    monkeypatch.setattr("uciEngine.get_engines_dir", lambda: dl_dir)
+    discovered_from_temp = {r["key"]: r for r in discover_engines()}
+    assert discovered_from_temp["plum_chess"]["installed"] is True
+    assert discovered_from_temp["plum_chess"]["path"] == str(plum_out.resolve())
+    assert discovered_from_temp["stockfish"]["installed"] is True
+    assert discovered_from_temp["stockfish"]["path"] == str(sf_out.resolve())

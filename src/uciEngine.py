@@ -96,12 +96,15 @@ KNOWN_ENGINES: tuple[EngineSpec, ...] = (
 
 
 def get_engines_dir() -> Path:
-    """Return the local directory where downloaded engines are stored.
+    """Return the cross-platform temporary directory where downloaded engines are stored.
 
-    :return: Path to the ``engines/`` directory inside the project.
+    Uses the system temporary directory (``tempfile.gettempdir() / 'stocky_chess_engines'``)
+    so standalone PyInstaller binaries work regardless of the current working directory.
+
+    :return: Path to the ``stocky_chess_engines`` directory inside the system temp folder.
     :rtype: Path
     """
-    return Path("engines")
+    return Path(tempfile.gettempdir()) / "stocky_chess_engines"
 
 
 def _common_search_dirs() -> list[Path]:

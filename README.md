@@ -19,7 +19,8 @@ choose computer moves.
 - **Engine discovery and one-click GitHub downloads.** Use **Game > Select Engine...** (or the
   per-player bot configuration dialog) to scan your system for installed UCI engines or download
   the latest release of **Stockfish** (`official-stockfish/Stockfish`) or **Plum Chess**
-  (`jwkunz/Plum_Chess`) for your OS and CPU architecture directly into `engines/`.
+  (`jwkunz/Plum_Chess`) for your OS and CPU architecture directly into the system temporary
+  directory (`<tempdir>/stocky_chess_engines`).
 - **Start / Pause Bot control.** Bot play starts paused after configuration so both players and
   clocks can be set up before clicking **START BOT** (or **Game > Start / Pause Bot**).
 - **Clickable board.** Click a piece to see its legal moves highlighted, then click a destination
@@ -60,15 +61,15 @@ pip install -r requirements.txt
 
 ## Running
 
-1. Run the program from the repository's top-level folder so that it can find the `resources`
-   and `engines` folders:
+1. Run the program from the repository's top-level folder:
 
    ```sh
    .venv/bin/python src/main.py
    ```
 
 2. Optional: Open **Game > Select Engine...** to scan your system for UCI engines or click
-   **Download Latest Release** to fetch Stockfish or Plum Chess from GitHub into `engines/`.
+   **Download Latest Release** to fetch Stockfish or Plum Chess from GitHub into the system
+   temporary directory.
 3. Use **Game > White Player...** and **Black Player...** to set each side to *Is Human* or *Is Bot*
    (selecting the engine, skill level, and search depth independently for each bot), configure
    clocks via **Time Control...**, and click **START BOT** when ready.
